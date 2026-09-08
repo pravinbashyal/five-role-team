@@ -1,0 +1,30 @@
+{
+  "$schema": "https://anthropic.com/claude-code/marketplace.schema.json",
+  "name": "five-role-team",
+  "owner": {
+    "name": "pravinbashyal",
+    "email": "pravin.bashyal@gmail.com"
+  },
+  "metadata": {
+    "description": "Five-role orchestrator protocol for OpenSpec-driven implementation, packaged as a Claude Code plugin."
+  },
+  "plugins": [
+    {
+      "name": "five-role-team",
+      "source": "./",
+      "description": "Five-role orchestrator protocol (Product Owner / orchestrator / worker / reviewer / supervisor) for OpenSpec-driven task implementation, reusable across projects.",
+      "version": "0.1.0",
+      "author": {
+        "name": "pravinbashyal"
+      },
+      "category": "development",
+      "keywords": [
+        "openspec",
+        "orchestrator",
+        "code-review",
+        "subagents",
+        "workflow"
+      ]
+    }
+  ]
+}

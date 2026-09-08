@@ -1,0 +1,43 @@
+# five-role-team
+
+A Claude Code plugin that packages a five-role development model (Product Owner / orchestrator / worker / reviewer / supervisor) for implementing [OpenSpec](https://github.com/Fission-AI/OpenSpec) change tasks — based on the workflow described at claude.rendle.dev.
+
+The core rule: **no actor approves its own code.** The main session (orchestrator) never writes or approves implementation code directly. It dispatches a `worker` subagent to implement one task, then a `reviewer` subagent (fresh context, no memory of how the code was written) to audit it. Multi-task sections get an additional `supervisor` pass (Opus) that audits cross-task composition once every task in the section is individually reviewer-approved.
+
+## What's in this plugin
+
+- `agents/worker.md` — implements exactly one task at a time, never marks its own work done
+- `agents/reviewer.md` — audits a worker's diff with fresh context, never implements
+- `agents/supervisor.md` — audits a completed multi-task section's composition, never implements
+- `skills/five-role-team` (this plugin's root `SKILL.md`) — the orchestrator's dispatch-loop protocol; overrides step 6 of the `openspec-apply-change` skill's default "implement inline" behavior
+- `conventions/review-comments.md` — the [Conventional Comments](https://conventionalcomments.org/) format `reviewer`/`supervisor` write findings in, referenced via `${CLAUDE_PLUGIN_ROOT}`
+
+## Requirements
+
+- A project using [OpenSpec](https://github.com/Fission-AI/OpenSpec) (`tasks.md`, `proposal.md`, `design.md`, `specs/*/spec.md`) — this isn't a general-purpose task runner.
+- The `openspec-apply-change` skill (or equivalent) for the actual OpenSpec CLI plumbing.
+
+Optional, used when present, never required:
+- The [`context-mode`](https://github.com/mksglu/context-mode) plugin — `worker`/`reviewer`/`supervisor` route large/disposable command output through its `ctx_batch_execute`/`ctx_execute` tools when available, and fall back to plain `Bash` otherwise.
+- A `graphify` knowledge graph for the codebase — queried for cross-file navigation before falling back to `grep`, never built just for one task.
+
+## Install
+
+From a local checkout (auto-loads every session, no marketplace needed):
+
+```
+git clone <this repo> ~/.claude/skills/five-role-team
+```
+
+From GitHub, in any project:
+
+```
+claude plugin marketplace add pravinbashyal/five-role-team
+claude plugin install five-role-team@five-role-team
+```
+
+Then point a project's own `CLAUDE.md` at the `five-role-team` skill instead of restating the protocol — see `SKILL.md`'s "Notes for adopting this in a project."
+
+## Why a plugin instead of copy-pasting the agent files
+
+The three agent personas alone aren't the whole system — the dispatch loop (record base SHA, one task at a time, re-review exceptions, section gating, escalation rules) lived in a single project's `CLAUDE.md` prose. Packaging it as a skill means installing this plugin gives a new project the whole protocol, not just personas that still need a hand-copied `CLAUDE.md` section.

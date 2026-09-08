@@ -1,0 +1,13 @@
+{
+  "$schema": "https://anthropic.com/claude-code/plugin.schema.json",
+  "name": "five-role-team",
+  "version": "0.1.0",
+  "description": "Five-role orchestrator protocol (Product Owner / orchestrator / worker / reviewer / supervisor) for OpenSpec-driven task implementation, reusable across projects.",
+  "author": {
+    "name": "pravinbashyal",
+    "email": "pravin.bashyal@gmail.com"
+  },
+  "skills": [
+    "./"
+  ]
+}
