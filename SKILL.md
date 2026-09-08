@@ -50,3 +50,9 @@ That skill's default "Implement tasks (loop until done or blocked)" step normall
 - `reviewer`/`supervisor` read their comment format from `${CLAUDE_PLUGIN_ROOT}/conventions/review-comments.md`, bundled with this plugin — no per-project file needed.
 - `worker`/`reviewer`/`supervisor` optionally use the `context-mode` plugin's `ctx_batch_execute`/`ctx_execute` tools and the `graphify` skill when installed, and fall back to plain `Bash`/`Grep` otherwise — neither is a hard dependency of this plugin.
 - A project's own `CLAUDE.md` can shrink to a short pointer at this skill (e.g. "OpenSpec task implementation uses the `five-role-team` skill") instead of restating the full protocol.
+
+### Getting this skill to actually load
+
+A CLAUDE.md pointer alone is **not reliable**: skills only take effect when invoked, and a plain `/opsx:apply` (or "continue implementing") loads that skill's own instructions directly without first triggering this one — even when CLAUDE.md says to use it. The old, fully-inlined version of this protocol didn't have this problem because CLAUDE.md content is unconditionally in context every turn; a skill is not.
+
+Use the bundled `/five-role-team:apply [change-name]` command instead of `/opsx:apply` — it deterministically loads this skill and the OpenSpec apply steps together in one turn, so there's no dependence on the model deciding to fetch the skill on its own. Point a project's CLAUDE.md at that command, not just at this skill.

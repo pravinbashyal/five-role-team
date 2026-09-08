@@ -9,7 +9,8 @@ The core rule: **no actor approves its own code.** The main session (orchestrato
 - `agents/worker.md` — implements exactly one task at a time, never marks its own work done
 - `agents/reviewer.md` — audits a worker's diff with fresh context, never implements
 - `agents/supervisor.md` — audits a completed multi-task section's composition, never implements
-- `skills/five-role-team` (this plugin's root `SKILL.md`) — the orchestrator's dispatch-loop protocol; overrides step 6 of the `openspec-apply-change` skill's default "implement inline" behavior
+- `SKILL.md` (this plugin's root skill, `five-role-team`) — the orchestrator's dispatch-loop protocol; overrides step 6 of the `openspec-apply-change` skill's default "implement inline" behavior
+- `commands/apply.md` (`/five-role-team:apply [change-name]`) — the reliable entry point; loads the protocol and the OpenSpec apply steps together in one turn instead of hoping the skill gets triggered on its own
 - `conventions/review-comments.md` — the [Conventional Comments](https://conventionalcomments.org/) format `reviewer`/`supervisor` write findings in, referenced via `${CLAUDE_PLUGIN_ROOT}`
 
 ## Requirements
@@ -36,7 +37,7 @@ claude plugin marketplace add pravinbashyal/five-role-team
 claude plugin install five-role-team@five-role-team
 ```
 
-Then point a project's own `CLAUDE.md` at the `five-role-team` skill instead of restating the protocol — see `SKILL.md`'s "Notes for adopting this in a project."
+Then point a project's own `CLAUDE.md` at **`/five-role-team:apply`**, not just at the skill by name — see "Getting this skill to actually load" in `SKILL.md`. A CLAUDE.md pointer to the skill alone is unreliable: skills only take effect when invoked, and a plain `/opsx:apply` loads its own instructions directly without first triggering this one. The `/five-role-team:apply` command is the deterministic fix.
 
 ## Why a plugin instead of copy-pasting the agent files
 
