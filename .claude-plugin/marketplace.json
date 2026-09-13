@@ -13,7 +13,7 @@
       "name": "five-role-team",
       "source": "./",
       "description": "Five-role orchestrator protocol (Product Owner / orchestrator / worker / reviewer / supervisor) for OpenSpec-driven task implementation, reusable across projects.",
-      "version": "0.2.0",
+      "version": "0.3.0",
       "author": {
         "name": "pravinbashyal"
       },
