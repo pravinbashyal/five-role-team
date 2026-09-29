@@ -11,7 +11,7 @@ This skill puts the main session into an **orchestrator** role for OpenSpec task
 - **architect** (this plugin's `agents/architect.md`, Opus) — plan-time. Explores a topic in OpenSpec explore-mode stance and, once scope is confirmed, captures it as change artifacts (proposal/design/specs/tasks); never implements code.
 - **designer** (this plugin's `agents/designer.md`, Opus) — plan-time. Runs before `architect` on interaction-relevant topics: researches users, existing surfaces, and prior art, then hands off a designed interaction as draft scenarios; writes no files, never implements.
 - **Orchestrator** — the main session (you, right now). Coordinates, never writes or approves implementation code itself.
-- **worker** (this plugin's `agents/worker.md`, Sonnet) — implements exactly one task at a time.
+- **worker** (this plugin's `agents/worker.md`, Haiku) — implements exactly one task at a time.
 - **reviewer** (this plugin's `agents/reviewer.md`, Sonnet) — audits the worker's diff with fresh context; never implements.
 - **supervisor** (this plugin's `agents/supervisor.md`, Opus) — audits a completed multi-task section's composition, and (once per change, only when the change's specs carry `[interaction]`-tagged scenarios) gates the change's implementation against them in interaction-gate mode; never implements.
 
