@@ -18,5 +18,8 @@
   "license": "ISC",
   "engines": {
     "node": ">=14"
+  },
+  "dependencies": {
+    "prompts": "^2.4.2"
   }
 }

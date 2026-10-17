@@ -10,6 +10,7 @@
 const fs = require('fs');
 const path = require('path');
 const os = require('os');
+const prompts = require('prompts');
 
 // Parse command line arguments
 const args = process.argv.slice(2);
