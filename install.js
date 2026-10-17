@@ -31,11 +31,12 @@ const prompts = require('prompts');
  *   - link: boolean
  *   - force: boolean
  *   - uninstall: boolean
- *   - errors: array of error messages (if --harness missing value)
+ *   - errors: array of error messages
  * 
- * Note: If --harness flag is provided without a value, an error is added to the errors array.
- * The script does NOT validate mutually exclusive flags in this function (that's task 2.2).
- * Unknown flags are silently ignored.
+ * Validation:
+ *   - Either --global or --local must be specified (exactly one, not both, not neither)
+ *   - If --harness flag is provided without a value, an error is added
+ *   - Unknown flags are silently ignored
  */
 function parseArgs(argv) {
   const parsed = {
@@ -72,6 +73,13 @@ function parseArgs(argv) {
       parsed.uninstall = true;
     }
     // Unknown flags are silently ignored (as per task 2.1 scope)
+  }
+
+  // Validate that exactly one of --global or --local is provided (task 2.2)
+  if (!parsed.global && !parsed.local) {
+    parsed.errors.push('Either --global or --local must be specified');
+  } else if (parsed.global && parsed.local) {
+    parsed.errors.push('--global and --local are mutually exclusive; specify only one');
   }
 
   return parsed;
@@ -169,7 +177,7 @@ CONFIGURATION:
 async function main() {
   const parsed = parseArgs(args);
   
-  // Check for parsing errors
+  // Check for parsing and validation errors
   if (parsed.errors.length > 0) {
     console.error('Error parsing arguments:');
     parsed.errors.forEach(err => console.error('  -', err));

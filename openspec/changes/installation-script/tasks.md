@@ -9,7 +9,7 @@
 ## 2. CLI Argument Parsing
 
 - [x] 2.1 Implement flag parsing for `--global`, `--local`, `--harness <name>`, `--link`, `--force`, `--uninstall` and verify each flag is correctly parsed
-- [ ] 2.2 Add validation that exactly one of `--global` or `--local` is required and verify error message shows for invalid combinations
+- [x] 2.2 Add validation that exactly one of `--global` or `--local` is required and verify error message shows for invalid combinations
 - [ ] 2.3 Implement non-interactive flags `--agents <list>` and `--agent-models <map>` and verify comma-separated parsing works correctly
 - [ ] 2.4 Add harness path resolution (pi → `~/.pi/agent/skills/`, claude-code → `~/.claude/skills/`, custom paths as-is) and verify each resolves correctly
 
