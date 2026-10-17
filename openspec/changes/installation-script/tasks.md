@@ -3,7 +3,7 @@
 ## 1. Setup
 
 - [x] 1.1 Create `install.js` with basic CLI structure and verify script runs with `--help` flag showing usage
-- [ ] 1.2 Add `package.json` (if not exists) with `engines` field requiring Node.js >=14 and verify `npm install` succeeds
+- [x] 1.2 Add `package.json` (if not exists) with `engines` field requiring Node.js >=14 and verify `npm install` succeeds
 - [ ] 1.3 Add `prompts` npm dependency for interactive prompts and verify import works in script
 
 ## 2. CLI Argument Parsing

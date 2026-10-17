@@ -1,0 +1,22 @@
+{
+  "name": "five-role-team",
+  "version": "1.0.0",
+  "description": "Five-role team plugin for AI assistant harnesses with customizable agent installation",
+  "main": "install.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [
+    "ai",
+    "claude",
+    "pi",
+    "plugin",
+    "agents",
+    "installation"
+  ],
+  "author": "",
+  "license": "ISC",
+  "engines": {
+    "node": ">=14"
+  }
+}
