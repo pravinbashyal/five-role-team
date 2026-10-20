@@ -32,7 +32,7 @@
 
 - [x] 5.1 Wire agent selection (section 3) and model configuration (section 4) into `main()` in `install.js`: when `--agents` / `--agent-models` are absent run the interactive prompts (`promptAgentSelection`, `promptModelConfiguration`), and when present use the non-interactive resolvers (`resolveSelectedAgents`, `readDefaultModels` + `resolveAgentModels`); exit cleanly when a prompt returns `null` (user cancel); show validation errors (e.g. empty model) as clear messages rather than stack traces; verify with both interactive and flag-driven runs, including a cancel and an invalid `--agent-models`
 - [x] 5.2 Implement directory validation and creation for target installation path and verify missing directories are created
-- [ ] 5.3 Implement agent file filtering to only copy selected agents and verify unselected agents are excluded from installation
+- [x] 5.3 Implement agent file filtering to only copy selected agents and verify unselected agents are excluded from installation
 - [ ] 5.4 Implement agent frontmatter modification to update `model:` field with configured model and verify modified frontmatter is valid YAML
 - [ ] 5.5 Implement copy mode installation (default) with all selected agent files and verify files copied with correct content
 - [ ] 5.6 Implement symlink mode installation with `--link` flag and verify symlinks point to source directory

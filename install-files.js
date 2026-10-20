@@ -2,6 +2,7 @@
 
 const fs = require('fs');
 const path = require('path');
+const { isPiHarness } = require('./select-agents');
 
 /**
  * Validate that a directory exists (or can be created) and is writable, and
@@ -114,7 +115,107 @@ function ensureInstallDirectories(resolved) {
   return { created, existing };
 }
 
+/**
+ * Top-level plugin entries that are part of an installation (allowlist taken
+ * from design.md "Context": SKILL.md, agents/, commands/, conventions/,
+ * .claude-plugin/). Anything not listed here (openspec/, .git, node_modules,
+ * .claude/, .pi/, verify-task-*.js / test-*.js scratch scripts, installer
+ * sources, package files, README) is never part of the install set.
+ * `agents/` and `pi/agents/` are handled separately (per-agent filtering).
+ */
+const INSTALL_FILES = ['SKILL.md'];
+const INSTALL_DIRS = ['commands', 'conventions', '.claude-plugin'];
+const IGNORED_NAMES = new Set(['.DS_Store', '.git', 'node_modules']);
+
+/**
+ * Build the list of files and directories that make up an installation.
+ * Pure with respect to the file system: only reads the source directory,
+ * copies/links nothing.
+ *
+ * - `agents/<id>.md` is kept only for ids in `selectedAgents`.
+ * - For the pi harness, `pi/agents/<id>.md` is likewise kept only for
+ *   selected ids; for other harnesses `pi/` is excluded entirely.
+ *
+ * @param {string} sourceDir - Plugin source directory (must contain SKILL.md and .claude-plugin/plugin.json)
+ * @param {string[]} selectedAgents - Agent ids to include
+ * @param {string} harness - Harness name or path from `--harness`
+ * @returns {{path: string, type: 'file'|'dir'}[]} Entries relative to sourceDir (POSIX separators), parents before children
+ * @throws {Error} if sourceDir is not a valid plugin directory
+ */
+function buildInstallSet(sourceDir, selectedAgents, harness) {
+  if (typeof sourceDir !== 'string' || sourceDir.trim().length === 0) {
+    throw new Error('Plugin source directory is required');
+  }
+  if (!Array.isArray(selectedAgents)) {
+    throw new Error('Selected agents must be an array');
+  }
+  const root = path.resolve(sourceDir);
+  for (const required of ['SKILL.md', path.join('.claude-plugin', 'plugin.json')]) {
+    if (!fs.existsSync(path.join(root, required))) {
+      throw new Error(`Not a plugin source directory: ${required} not found in ${root}`);
+    }
+  }
+
+  const selected = new Set(selectedAgents);
+  const entries = [];
+
+  for (const file of INSTALL_FILES) {
+    if (fs.existsSync(path.join(root, file))) entries.push({ path: file, type: 'file' });
+  }
+  for (const dir of INSTALL_DIRS) {
+    collectTree(root, dir, entries);
+  }
+  collectAgents(root, 'agents', selected, entries);
+  if (isPiHarness(harness)) {
+    collectAgents(root, 'pi/agents', selected, entries, true);
+  }
+  return entries;
+}
+
+function collectTree(root, rel, entries) {
+  const abs = path.join(root, rel);
+  let stat;
+  try {
+    stat = fs.statSync(abs);
+  } catch (err) {
+    return;
+  }
+  if (!stat.isDirectory()) return;
+  entries.push({ path: rel, type: 'dir' });
+  for (const name of fs.readdirSync(abs).sort()) {
+    if (IGNORED_NAMES.has(name)) continue;
+    const childRel = `${rel}/${name}`;
+    if (fs.statSync(path.join(root, childRel)).isDirectory()) {
+      collectTree(root, childRel, entries);
+    } else {
+      entries.push({ path: childRel, type: 'file' });
+    }
+  }
+}
+
+function collectAgents(root, rel, selected, entries, addParent) {
+  const abs = path.join(root, rel);
+  let names;
+  try {
+    names = fs.readdirSync(abs).sort();
+  } catch (err) {
+    return;
+  }
+  const files = names.filter(
+    (n) => n.endsWith('.md') && selected.has(n.slice(0, -3)) && fs.statSync(path.join(abs, n)).isFile()
+  );
+  if (files.length === 0 && !addParent) {
+    // Keep agents/ itself so the installed layout is stable even when empty.
+    entries.push({ path: rel, type: 'dir' });
+    return;
+  }
+  if (addParent) entries.push({ path: 'pi', type: 'dir' });
+  entries.push({ path: rel, type: 'dir' });
+  for (const n of files) entries.push({ path: `${rel}/${n}`, type: 'file' });
+}
+
 module.exports = {
   ensureDirectory,
   ensureInstallDirectories,
+  buildInstallSet,
 };
