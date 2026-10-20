@@ -30,15 +30,16 @@
 
 ## 5. Installation Logic
 
-- [ ] 5.1 Implement directory validation and creation for target installation path and verify missing directories are created
-- [ ] 5.2 Implement agent file filtering to only copy selected agents and verify unselected agents are excluded from installation
-- [ ] 5.3 Implement agent frontmatter modification to update `model:` field with configured model and verify modified frontmatter is valid YAML
-- [ ] 5.4 Implement copy mode installation (default) with all selected agent files and verify files copied with correct content
-- [ ] 5.5 Implement symlink mode installation with `--link` flag and verify symlinks point to source directory
-- [ ] 5.6 Implement pi dual-location handling (copy/symlink to `~/.claude/skills/` AND symlink from `~/.pi/agent/skills/`) and verify both locations exist for pi harness
-- [ ] 5.7 Implement harness-specific file handling (include `pi/` only for pi harness) and verify pi-specific files excluded for claude-code
-- [ ] 5.8 Add existing installation detection and confirmation prompt (skip with `--force`) and verify overwrite warning shows
-- [ ] 5.9 Implement rollback on partial installation failure and verify partial files removed on error
+- [ ] 5.1 Wire agent selection (section 3) and model configuration (section 4) into `main()` in `install.js`: when `--agents` / `--agent-models` are absent run the interactive prompts (`promptAgentSelection`, `promptModelConfiguration`), and when present use the non-interactive resolvers (`resolveSelectedAgents`, `readDefaultModels` + `resolveAgentModels`); exit cleanly when a prompt returns `null` (user cancel); show validation errors (e.g. empty model) as clear messages rather than stack traces; verify with both interactive and flag-driven runs, including a cancel and an invalid `--agent-models`
+- [ ] 5.2 Implement directory validation and creation for target installation path and verify missing directories are created
+- [ ] 5.3 Implement agent file filtering to only copy selected agents and verify unselected agents are excluded from installation
+- [ ] 5.4 Implement agent frontmatter modification to update `model:` field with configured model and verify modified frontmatter is valid YAML
+- [ ] 5.5 Implement copy mode installation (default) with all selected agent files and verify files copied with correct content
+- [ ] 5.6 Implement symlink mode installation with `--link` flag and verify symlinks point to source directory
+- [ ] 5.7 Implement pi dual-location handling (copy/symlink to `~/.claude/skills/` AND symlink from `~/.pi/agent/skills/`) and verify both locations exist for pi harness
+- [ ] 5.8 Implement harness-specific file handling (include `pi/` only for pi harness, so `pi/agents/intern.md` is copied or linked for pi installs and its default model `qwen3.5:4b-mlx` is read from it) and verify pi-specific files excluded for claude-code
+- [ ] 5.9 Add existing installation detection and confirmation prompt (skip with `--force`) and verify overwrite warning shows
+- [ ] 5.10 Implement rollback on partial installation failure and verify partial files removed on error
 
 ## 6. Configuration File Generation
 
