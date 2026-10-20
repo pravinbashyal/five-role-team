@@ -22,6 +22,8 @@ const prompts = require('prompts');
  * - --link: Use symlink mode instead of copy
  * - --force: Force overwrite without confirmation
  * - --uninstall: Uninstall instead of install
+ * - --agents <list>: Comma-separated list of agents (non-interactive mode)
+ * - --agent-models <map>: Comma-separated key=value pairs for agent models (non-interactive mode)
  * 
  * @param {string[]} argv - Arguments array (without 'node' and script name)
  * @returns {object} Parsed arguments object with boolean properties and harness value:
@@ -31,11 +33,16 @@ const prompts = require('prompts');
  *   - link: boolean
  *   - force: boolean
  *   - uninstall: boolean
+ *   - agents: array or null (null if not provided, empty array if provided but empty)
+ *   - agentModels: object (empty object {} if not provided). Values preserve any '=' characters.
  *   - errors: array of error messages
  * 
  * Validation:
  *   - Either --global or --local must be specified (exactly one, not both, not neither)
  *   - If --harness flag is provided without a value, an error is added
+ *   - If --agents flag is provided without a value, an error is added
+ *   - If --agent-models flag is provided without a value, an error is added
+ *   - Malformed --agent-models pairs (no '=', empty key or value) add errors
  *   - Unknown flags are silently ignored
  */
 function parseArgs(argv) {
@@ -46,6 +53,8 @@ function parseArgs(argv) {
     link: false,
     force: false,
     uninstall: false,
+    agents: null,
+    agentModels: {},
     errors: []
   };
 
@@ -71,6 +80,49 @@ function parseArgs(argv) {
       parsed.force = true;
     } else if (arg === '--uninstall') {
       parsed.uninstall = true;
+    } else if (arg === '--agents') {
+      // Get next argument as value. Value is required and must not look like a flag.
+      if (i + 1 < argv.length && !argv[i + 1].startsWith('--')) {
+        const agentList = argv[i + 1];
+        i++; // Skip next argument since we consumed it as the value
+        // Parse comma-separated list, trim whitespace, drop empty strings
+        parsed.agents = agentList
+          .split(',')
+          .map(s => s.trim())
+          .filter(s => s.length > 0);
+      } else {
+        // --agents without a value is an error
+        parsed.errors.push('--agents requires a value (comma-separated list)');
+      }
+    } else if (arg === '--agent-models') {
+      // Get next argument as value. Value is required and must not look like a flag.
+      if (i + 1 < argv.length && !argv[i + 1].startsWith('--')) {
+        const modelMap = argv[i + 1];
+        i++; // Skip next argument since we consumed it as the value
+        // Parse comma-separated key=value pairs
+        parsed.agentModels = {};
+        const pairs = modelMap.split(',');
+        for (const pair of pairs) {
+          const trimmed = pair.trim();
+          if (trimmed.length === 0) continue; // Skip empty entries
+          // Find first '=' to handle values containing '='
+          const eqIndex = trimmed.indexOf('=');
+          if (eqIndex === -1) {
+            parsed.errors.push(`--agent-models: malformed pair '${trimmed}' (must be key=value)`);
+          } else {
+            const key = trimmed.substring(0, eqIndex).trim();
+            const value = trimmed.substring(eqIndex + 1).trim();
+            if (key.length === 0 || value.length === 0) {
+              parsed.errors.push(`--agent-models: pair '${trimmed}' has empty key or value`);
+            } else {
+              parsed.agentModels[key] = value;
+            }
+          }
+        }
+      } else {
+        // --agent-models without a value is an error
+        parsed.errors.push('--agent-models requires a value (comma-separated key=value pairs)');
+      }
     }
     // Unknown flags are silently ignored (as per task 2.1 scope)
   }
