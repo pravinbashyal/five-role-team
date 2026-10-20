@@ -2,6 +2,29 @@
 
 const defaultPrompts = require('prompts');
 
+const MODEL_ALIASES = {
+  opus: 'anthropic/claude-opus-4-5-20251101',
+  sonnet: 'anthropic/claude-sonnet-4-20250514',
+  haiku: 'haiku',
+};
+
+/**
+ * Expand a short model name to its full form.
+ * `opus` and `sonnet` expand to full anthropic paths, `haiku` stays as-is,
+ * and any other value (including full names containing `/`) is unchanged.
+ *
+ * @param {string} name
+ * @returns {string}
+ */
+function expandModelName(name) {
+  if (typeof name !== 'string') return name;
+  const trimmed = name.trim();
+  if (trimmed.includes('/')) return trimmed;
+  return Object.prototype.hasOwnProperty.call(MODEL_ALIASES, trimmed)
+    ? MODEL_ALIASES[trimmed]
+    : trimmed;
+}
+
 /**
  * Build the prompts question object for one agent's model.
  * The current default is shown in the message and pre-filled as `initial`,
@@ -51,7 +74,7 @@ async function promptModelConfiguration(agentIds, defaults = {}, options = {}) {
 
     const model = typeof response.model === 'string' ? response.model.trim() : '';
     if (model.length > 0) {
-      models[id] = model;
+      models[id] = expandModelName(model);
     }
   }
 
@@ -59,6 +82,7 @@ async function promptModelConfiguration(agentIds, defaults = {}, options = {}) {
 }
 
 module.exports = {
+  expandModelName,
   buildModelPromptQuestion,
   promptModelConfiguration,
 };

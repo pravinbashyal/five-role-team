@@ -24,7 +24,7 @@
 
 - [x] 4.1 Read default models from source agent frontmatter files and verify correct extraction of current model values
 - [x] 4.2 Implement interactive model configuration prompts for each selected agent showing defaults and verify each prompt displays current default
-- [ ] 4.3 Implement model name expansion (opus → full anthropic path, sonnet → full path, haiku as-is, full paths unchanged) and verify expansion works correctly
+- [x] 4.3 Implement model name expansion (opus → full anthropic path, sonnet → full path, haiku as-is, full paths unchanged) and verify expansion works correctly
 - [ ] 4.4 Implement non-interactive model configuration from `--agent-models` flag with key=value parsing and verify model override works
 - [ ] 4.5 Add validation that model string is non-empty and verify error on empty model
 
