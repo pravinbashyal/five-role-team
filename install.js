@@ -128,13 +128,84 @@ function parseArgs(argv) {
   }
 
   // Validate that exactly one of --global or --local is provided (task 2.2)
-  if (!parsed.global && !parsed.local) {
-    parsed.errors.push('Either --global or --local must be specified');
-  } else if (parsed.global && parsed.local) {
-    parsed.errors.push('--global and --local are mutually exclusive; specify only one');
+  // However, skip this validation if --help is provided
+  if (!argv.includes('--help') && !argv.includes('-h')) {
+    if (!parsed.global && !parsed.local) {
+      parsed.errors.push('Either --global or --local must be specified');
+    } else if (parsed.global && parsed.local) {
+      parsed.errors.push('--global and --local are mutually exclusive; specify only one');
+    }
   }
 
   return parsed;
+}
+
+/**
+ * Resolve harness name or path to the actual installation directory
+ * 
+ * Resolves the following patterns:
+ * - 'pi' with global scope → ~/.claude/skills/
+ * - 'claude-code' with global scope → ~/.claude/skills/
+ * - 'pi' with local scope → ./.pi/skills/
+ * - 'claude-code' with local scope → ./.claude/skills/
+ * - custom path (contains '/' or ends with known dir name) → used as-is
+ * 
+ * For pi harness, also returns secondary symlink location
+ * 
+ * @param {string} harness - Harness name or path
+ * @param {boolean} isGlobal - True for global scope, false for local
+ * @returns {object} Resolved paths object:
+ *   - base: string - base skills directory path (without /five-role-team/ suffix)
+ *   - primary: string - primary installation path (base/five-role-team/)
+ *   - secondary: string|null - secondary symlink path for pi (only for pi harness)
+ * @throws {Error} if harness is empty or invalid
+ */
+function resolveHarnessPath(harness, isGlobal) {
+  if (!harness || harness.trim().length === 0) {
+    throw new Error('Harness name or path is required');
+  }
+  
+  const trimmedHarness = harness.trim();
+  const pluginName = 'five-role-team';
+  
+  // Detect if this is a custom path (contains '/' or is an absolute path)
+  const isCustomPath = trimmedHarness.includes(path.sep) || trimmedHarness.startsWith('/');
+  
+  let basePath;
+  let secondaryPath = null;
+  
+  if (isCustomPath) {
+    // Custom path: use as-is
+    basePath = trimmedHarness;
+  } else if (trimmedHarness === 'pi') {
+    if (isGlobal) {
+      // Global pi: primary goes to ~/.claude/skills/, secondary symlink at ~/.pi/agent/skills/
+      basePath = path.join(os.homedir(), '.claude', 'skills');
+      secondaryPath = path.join(os.homedir(), '.pi', 'agent', 'skills');
+    } else {
+      // Local pi: goes to ./.pi/skills/
+      basePath = path.join('.', '.pi', 'skills');
+    }
+  } else if (trimmedHarness === 'claude-code') {
+    if (isGlobal) {
+      // Global claude-code: ~/.claude/skills/
+      basePath = path.join(os.homedir(), '.claude', 'skills');
+    } else {
+      // Local claude-code: ./.claude/skills/
+      basePath = path.join('.', '.claude', 'skills');
+    }
+  } else {
+    // Unknown harness name - treat as potential custom path
+    basePath = trimmedHarness;
+  }
+  
+  const primaryPath = path.join(basePath, pluginName);
+  
+  return {
+    base: basePath,
+    primary: primaryPath,
+    secondary: secondaryPath ? path.join(secondaryPath, pluginName) : null
+  };
 }
 
 // Parse command line arguments
@@ -225,7 +296,9 @@ CONFIGURATION:
 `);
 }
 
-// Main execution
+/**
+ * Main installation logic
+ */
 async function main() {
   const parsed = parseArgs(args);
   
@@ -236,15 +309,32 @@ async function main() {
     process.exit(1);
   }
   
-  console.log('Five-Role Team Plugin Installer');
-  console.log('Installation logic coming soon...');
-  console.log('Run with --help to see usage information.');
+  // If harness is provided, resolve and display paths for verification
+  if (parsed.harness) {
+    try {
+      const resolved = resolveHarnessPath(parsed.harness, parsed.global);
+      console.log('Harness path resolution:');
+      console.log('  Base:', resolved.base);
+      console.log('  Primary:', resolved.primary);
+      if (resolved.secondary) {
+        console.log('  Secondary (symlink):', resolved.secondary);
+      }
+    } catch (err) {
+      console.error('Error resolving harness path:', err.message);
+      process.exit(1);
+    }
+  } else {
+    console.log('Five-Role Team Plugin Installer');
+    console.log('Installation logic coming soon...');
+    console.log('Run with --help to see usage information.');
+  }
 }
 
-// Export parseArgs for testing via node -e or require()
-module.exports = { parseArgs };
 
-// Run main if not showing help (only when run directly as script)
+// Export functions for testing
+module.exports = { parseArgs, resolveHarnessPath };
+
+// Run main if not showing help
 if (require.main === module && !args.includes('--help') && !args.includes('-h')) {
   main().catch(err => {
     console.error('Error:', err.message);
