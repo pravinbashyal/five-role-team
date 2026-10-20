@@ -16,7 +16,7 @@
 ## 3. Agent Selection
 
 - [x] 3.1 Implement interactive agent selection prompt with multi-select for available agents (architect, designer, worker, reviewer, supervisor, intern) and verify all agents shown with descriptions
-- [ ] 3.2 Add agent validation that disables intern option when harness is not pi and verify warning shows for invalid selection
+- [x] 3.2 Add agent validation that disables intern option when harness is not pi and verify warning shows for invalid selection
 - [ ] 3.3 Implement non-interactive agent selection from `--agents` flag with comma-separated parsing and verify subset installation works
 - [ ] 3.4 Set default to all available agents when no selection made and verify default selection includes all agents
 

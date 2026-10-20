@@ -1,6 +1,60 @@
 'use strict';
 
+const path = require('path');
 const defaultPrompts = require('prompts');
+
+const INTERN_AGENT_ID = 'intern';
+const INTERN_REQUIRES_PI_WARNING =
+  'Warning: Intern agent requires the pi harness.';
+const INTERN_REQUIRES_PI_PROMPT =
+  'Deselect intern or change the harness to pi (or a custom path that includes .pi).';
+
+/**
+ * Full warning shown when intern is selected with a non-pi harness.
+ * @returns {string}
+ */
+function formatInternRequiresPiMessage() {
+  return `${INTERN_REQUIRES_PI_WARNING} ${INTERN_REQUIRES_PI_PROMPT}`;
+}
+
+/**
+ * Whether the selected agent list includes intern on a harness that does not support it.
+ *
+ * @param {string[]} agents - Selected agent ids
+ * @param {string|null|undefined} harness - Harness from `--harness`
+ * @returns {boolean}
+ */
+function selectionIncludesInvalidIntern(agents, harness) {
+  if (!Array.isArray(agents) || !agents.includes(INTERN_AGENT_ID)) {
+    return false;
+  }
+  return !isPiHarness(harness);
+}
+
+/**
+ * Whether the install target harness supports the intern agent (design Decision 3 / 6).
+ *
+ * @param {string|null|undefined} harness - Harness name or path from `--harness`
+ * @returns {boolean}
+ */
+function isPiHarness(harness) {
+  if (!harness || typeof harness !== 'string') {
+    return false;
+  }
+  const trimmed = harness.trim();
+  if (trimmed.length === 0) {
+    return false;
+  }
+  if (trimmed === 'pi') {
+    return true;
+  }
+  const isCustomPath =
+    trimmed.includes(path.sep) || trimmed.startsWith('/');
+  if (isCustomPath) {
+    return trimmed.includes(`${path.sep}.pi${path.sep}`) || trimmed.includes(`${path.sep}.pi`);
+  }
+  return trimmed.includes('pi');
+}
 
 /**
  * Catalog of installable agents (order matches interactive prompt).
@@ -48,18 +102,23 @@ function formatAgentChoiceTitle(agent) {
  *
  * @param {object} [options]
  * @param {boolean} [options.selectAllExceptIntern=true] - Initial selection in the prompt UI
- * @returns {Array<{ title: string, value: string, selected?: boolean }>}
+ * @param {string} [options.harness] - When set and not pi, intern choice is disabled
+ * @returns {Array<{ title: string, value: string, selected?: boolean, disabled?: boolean }>}
  */
 function buildAgentSelectChoices(options = {}) {
-  const { selectAllExceptIntern = true } = options;
+  const { selectAllExceptIntern = true, harness } = options;
+  const internAllowed = harness === undefined ? true : isPiHarness(harness);
 
   return AGENT_CATALOG.map((agent) => {
     const choice = {
       title: formatAgentChoiceTitle(agent),
       value: agent.id,
     };
-    if (selectAllExceptIntern) {
-      choice.selected = agent.id !== 'intern';
+    if (agent.id === INTERN_AGENT_ID && !internAllowed) {
+      choice.disabled = true;
+      choice.selected = false;
+    } else if (selectAllExceptIntern) {
+      choice.selected = agent.id !== INTERN_AGENT_ID;
     } else {
       choice.selected = true;
     }
@@ -93,21 +152,38 @@ function buildAgentSelectPromptQuestion(options) {
  */
 async function promptAgentSelection(options = {}) {
   const promptsImpl = options.promptsImpl || defaultPrompts;
-  const question = buildAgentSelectPromptQuestion(options.choiceOptions);
+  const choiceOptions = options.choiceOptions || {};
+  const harness = choiceOptions.harness;
+  const warn = options.warn || ((message) => console.warn(message));
 
-  const response = await promptsImpl(question, {
-    onCancel: () => true,
-  });
+  for (;;) {
+    const question = buildAgentSelectPromptQuestion(choiceOptions);
 
-  if (!response || !Array.isArray(response.agents)) {
-    return null;
+    const response = await promptsImpl(question, {
+      onCancel: () => true,
+    });
+
+    if (!response || !Array.isArray(response.agents)) {
+      return null;
+    }
+
+    if (selectionIncludesInvalidIntern(response.agents, harness)) {
+      warn(formatInternRequiresPiMessage());
+      continue;
+    }
+
+    return response.agents;
   }
-  return response.agents;
 }
 
 module.exports = {
   AGENT_CATALOG,
+  INTERN_REQUIRES_PI_WARNING,
+  INTERN_REQUIRES_PI_PROMPT,
+  isPiHarness,
   formatAgentChoiceTitle,
+  formatInternRequiresPiMessage,
+  selectionIncludesInvalidIntern,
   buildAgentSelectChoices,
   buildAgentSelectPromptQuestion,
   promptAgentSelection,
