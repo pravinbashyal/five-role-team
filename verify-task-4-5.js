@@ -27,19 +27,22 @@ function throws(fn) { try { fn(); return null; } catch (e) { return e; } }
   assert(parseArgs(['--agent-models', 'worker=']).errors.length > 0, 'parseArgs rejects empty value');
   const e1 = throws(() => resolveAgentModels(['worker'], defaults, { worker: '  ' }));
   assert(e1 && /worker/.test(e1.message) && /empty/.test(e1.message), 'blank override errors naming agent');
-  const e2 = throws(() => resolveAgentModels(['intern'], defaults, {}));
-  assert(e2 && /intern/.test(e2.message), 'no default and no override errors');
+  const e2 = throws(() => resolveAgentModels(['ghost'], defaults, {}));
+  assert(e2 && /ghost/.test(e2.message), 'no default and no override errors');
   assert(resolveAgentModels(['worker'], defaults, {}).worker === defaults.worker, 'default still used when no override');
   assert(!throws(() => resolveAgentModels(['worker'], defaults, { intern: '' })), 'unselected agent blank override ignored');
 
   // Interactive
-  const q = buildModelPromptQuestion('intern', undefined);
+  const q = buildModelPromptQuestion('ghost', undefined);
   assert(typeof q.validate === 'function' && typeof q.validate('') === 'string' && q.validate('x') === true, 'prompt question validates non-empty');
   let err = null;
-  try { await promptModelConfiguration(['intern'], {}, { promptsImpl: async () => ({ model: '' }) }); } catch (e) { err = e; }
-  assert(err && /intern/.test(err.message), 'empty answer with no default errors');
+  try { await promptModelConfiguration(['ghost'], {}, { promptsImpl: async () => ({ model: '' }) }); } catch (e) { err = e; }
+  assert(err && /ghost/.test(err.message), 'empty answer with no default errors');
   const ok = await promptModelConfiguration(['worker'], defaults, { promptsImpl: async () => ({ model: 'sonnet' }) });
   assert(ok.worker === 'anthropic/claude-sonnet-4-20250514', 'non-empty answer accepted and expanded');
+  const aq = buildModelPromptQuestion('architect', 'opus');
+  assert(aq.message.includes('anthropic/claude-opus-4-5-20251101'), 'prompt message shows expanded default');
+  assert(aq.initial === 'anthropic/claude-opus-4-5-20251101', 'prompt initial is expanded default');
 
   process.exit(failed ? 1 : 0);
 })();

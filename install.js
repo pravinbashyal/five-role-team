@@ -385,6 +385,7 @@ const {
 } = require('./select-agents');
 const {
   validateModel,
+  expandModelName,
   buildModelPromptQuestion,
   promptModelConfiguration,
   resolveAgentModels,
@@ -401,6 +402,7 @@ module.exports = {
   promptAgentSelection,
   resolveSelectedAgents,
   validateModel,
+  expandModelName,
   buildModelPromptQuestion,
   promptModelConfiguration,
   resolveAgentModels,

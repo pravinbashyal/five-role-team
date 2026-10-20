@@ -50,13 +50,14 @@ function validateModel(value) {
  */
 function buildModelPromptQuestion(agentId, defaultModel) {
   const hasDefault = typeof defaultModel === 'string' && defaultModel.length > 0;
+  const expandedDefault = hasDefault ? expandModelName(defaultModel) : '';
   return {
     type: 'text',
     name: 'model',
     message: hasDefault
-      ? `Model for ${agentId} (default: ${defaultModel}):`
+      ? `Model for ${agentId} (default: ${expandedDefault}):`
       : `Model for ${agentId} (no default):`,
-    initial: hasDefault ? defaultModel : '',
+    initial: expandedDefault,
     validate: validateModel,
   };
 }
