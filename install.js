@@ -331,8 +331,22 @@ async function main() {
 }
 
 
+const {
+  AGENT_CATALOG,
+  buildAgentSelectChoices,
+  buildAgentSelectPromptQuestion,
+  promptAgentSelection,
+} = require('./select-agents');
+
 // Export functions for testing
-module.exports = { parseArgs, resolveHarnessPath };
+module.exports = {
+  parseArgs,
+  resolveHarnessPath,
+  AGENT_CATALOG,
+  buildAgentSelectChoices,
+  buildAgentSelectPromptQuestion,
+  promptAgentSelection,
+};
 
 // Run main if not showing help
 if (require.main === module && !args.includes('--help') && !args.includes('-h')) {
