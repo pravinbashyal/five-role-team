@@ -98,9 +98,9 @@ function listFiles(dir, rel = '') {
   // Real CLI run in temp cwd with temp HOME
   const p = spawnSync('node', [path.join(src, 'install.js'), '--local', '--harness', 'claude-code', '--agents', 'supervisor', '--force'], { encoding: 'utf8', cwd: work }); // --force: earlier runs already installed here (5.9)
   assert(p.status === 0 && fs.existsSync(path.join(t, 'agents', 'supervisor.md')), 'CLI: copy install exit 0');
-  const q = spawnSync('node', [path.join(src, 'install.js'), '--local', '--harness', 'claude-code', '--agents', 'supervisor', '--link'], { encoding: 'utf8', cwd: work });
-  // 5.9: without --force and non-TTY stdin the overwrite is declined (exit 0, nothing changed); linkInstall's own safety net still errors
-  assert(q.status === 0 && /cancelled/i.test(q.stdout) && fs.lstatSync(t).isDirectory(), 'CLI --link onto existing target: declined, unchanged');
+  const q = spawnSync('node', [path.join(src, 'install.js'), '--local', '--harness', 'claude-code', '--agents', 'supervisor', '--link'], { encoding: 'utf8', cwd: work, stdio: ['ignore', 'pipe', 'pipe'] });
+  // 5.9: without --force and non-TTY stdin the overwrite cannot be confirmed: exit non-zero with a --force hint, nothing changed; linkInstall's own safety net still errors
+  assert(q.status !== 0 && /--force/.test(q.stderr) && fs.lstatSync(t).isDirectory(), 'CLI --link onto existing target (no TTY): refused with --force hint, unchanged');
   let le = ''; try { linkInstall(src, t); } catch (e) { le = e.message; }
   assert(/already exists/.test(le), 'linkInstall onto existing target: already exists error');
 

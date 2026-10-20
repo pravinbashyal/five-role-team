@@ -77,8 +77,10 @@ const lst = (p) => fs.lstatSync(p, { throwIfNoEntry: false });
     if (kind === 'file') fs.writeFileSync(s, 'keep');
     if (kind === 'dir') { fs.mkdirSync(s); fs.writeFileSync(path.join(s, 'k'), 'keep'); }
     if (kind === 'dangling') fs.symlinkSync(path.join(tmpRoot, 'nowhere'), s);
-    x = await run(['--global', '--harness', 'pi', '--agents', 'worker'], name);
-    assert(x.r.exitCode !== 0 && /^Error: .*already exists/m.test(x.err), kind + ': Error: ... already exists');
+    // 5.11: main now detects/backs up such a secondary (verify-task-5-11.js); linkSecondary itself still refuses to overwrite
+    fs.mkdirSync(path.join(home, '.claude', 'skills', 'five-role-team'), { recursive: true });
+    let lerr = ''; try { linkSecondary(path.join(home, '.claude', 'skills', 'five-role-team'), s); } catch (e2) { lerr = e2.message; }
+    assert(/Cannot create secondary link .*already exists/.test(lerr), kind + ': linkSecondary: ... already exists');
     const st = lst(s);
     const intact = kind === 'file' ? fs.readFileSync(s, 'utf8') === 'keep'
       : kind === 'dir' ? fs.readFileSync(path.join(s, 'k'), 'utf8') === 'keep'

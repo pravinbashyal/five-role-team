@@ -39,6 +39,7 @@ const prompts = require('prompts');
  * 
  * Validation:
  *   - Either --global or --local must be specified (exactly one, not both, not neither)
+ *   - --harness is required (unless --help is given)
  *   - If --harness flag is provided without a value, an error is added
  *   - If --agents flag is provided without a value, an error is added
  *   - If --agent-models flag is provided without a value, an error is added
@@ -135,6 +136,12 @@ function parseArgs(argv) {
     } else if (parsed.global && parsed.local) {
       parsed.errors.push('--global and --local are mutually exclusive; specify only one');
     }
+  }
+
+  // --harness is required (design Decision 2) for install and uninstall alike.
+  // If the flag was given without a value, that error was already recorded.
+  if (!argv.includes('--help') && !argv.includes('-h') && !parsed.harness && !argv.includes('--harness')) {
+    parsed.errors.push('--harness is required (harness name or path, e.g. --harness pi)');
   }
 
   return parsed;
@@ -342,41 +349,56 @@ CONFIGURATION:
 }
 
 /**
- * Warn about an existing installation and ask whether to overwrite it.
- * Decline, cancel (Ctrl-C), a missing answer, or a non-interactive stdin (when
- * no promptsImpl is injected) all count as "no".
+ * Warn about an existing installation (and/or a conflicting pi secondary
+ * location) and ask whether to overwrite it.
+ * Decline, cancel (Ctrl-C) or a missing answer resolve to false. When there is
+ * no TTY and no promptsImpl is injected the question cannot be asked: that is
+ * NOT a decline, so it throws an Error with code 'NON_INTERACTIVE' (callers
+ * report it as a failure and point at --force).
  *
- * @param {{kind: string, path: string, linkTarget?: string}} existing - From detectExistingInstall
+ * @param {{kind: string, path: string, linkTarget?: string}|null} existing - From detectExistingInstall (null when only the secondary conflicts)
  * @param {object} [options]
  * @param {object} [options.promptsImpl] - Injectable prompts module for tests
  * @param {function} [options.log] - Logger for the warning (default console.log)
+ * @param {{kind: string, path: string, linkTarget?: string}|null} [options.secondary] - Conflicting pi secondary from detectSecondaryConflict
  * @returns {Promise<boolean>} true only on explicit confirmation
+ * @throws {Error} code 'NON_INTERACTIVE' when no TTY is available to ask
  */
 async function confirmOverwrite(existing, options = {}) {
   const log = options.log || console.log;
-  const what = existing.kind === 'directory' ? 'directory'
-    : existing.kind === 'file' ? 'file'
-    : existing.kind === 'dangling-symlink' ? 'dangling symlink -> ' + existing.linkTarget
-    : 'symlink -> ' + existing.linkTarget;
-  log('Warning: five-role-team is already installed at ' + existing.path + ' (' + what + ').');
-  log('Continuing will remove it and install again (the installed copy or link only; a symlink source is never deleted). Use --force to skip this prompt.');
+  const describe = (e) => e.kind === 'directory' ? 'directory'
+    : e.kind === 'file' ? 'file'
+    : e.kind === 'dangling-symlink' ? 'dangling symlink -> ' + e.linkTarget
+    : 'symlink -> ' + e.linkTarget;
+  const secondary = options.secondary || null;
+  if (existing) {
+    log('Warning: five-role-team is already installed at ' + existing.path + ' (' + describe(existing) + ').');
+  }
+  if (secondary) {
+    log('Warning: the pi secondary location ' + secondary.path + ' already exists (' + describe(secondary) + ') and is not a link to the new installation.');
+  }
+  log('Continuing will remove ' + (existing && secondary ? 'both' : 'it') + ' and install again (the installed copy or link only; a symlink source is never deleted). Use --force to skip this prompt.');
   if (!options.promptsImpl && !(process.stdin && process.stdin.isTTY)) {
-    log('Non-interactive input: cannot confirm overwrite.');
-    return false;
+    const err = new Error('Non-interactive input: cannot confirm overwrite. Re-run with --force to overwrite without a prompt.');
+    err.code = 'NON_INTERACTIVE';
+    throw err;
   }
   const promptsImpl = options.promptsImpl || prompts;
+  const names = [existing, secondary].filter(Boolean).map(e => e.path).join(' and ');
   const response = await promptsImpl({
     type: 'confirm',
     name: 'overwrite',
-    message: 'Overwrite existing installation at ' + existing.path + '?',
+    message: 'Overwrite existing installation at ' + names + '?',
     initial: false
   }, { onCancel: () => true });
   return !!(response && response.overwrite === true);
 }
 
 /**
- * Main installation logic (currently: argument validation, agent selection and
- * model configuration; file installation is added by later tasks).
+ * Main installation logic: argument validation, agent selection, model
+ * configuration, then file installation (copy or --link, pi secondary link,
+ * existing-install handling with backup/rollback). Uninstall is handled by a
+ * later section.
  *
  * Selection rules:
  * - --agents given: resolveSelectedAgents (non-interactive); otherwise, if
@@ -414,24 +436,12 @@ async function main(argv = args, options = {}) {
     return fail('Error parsing arguments:', ...parsed.errors.map(err => '  - ' + err));
   }
   
-  // If harness is provided, resolve and display paths for verification
-  if (parsed.harness) {
-    try {
-      const resolved = resolveHarnessPath(parsed.harness, parsed.global);
-      log('Harness path resolution:');
-      log('  Base: ' + resolved.base);
-      log('  Primary: ' + resolved.primary);
-      if (resolved.secondary) {
-        log('  Secondary (symlink): ' + resolved.secondary);
-      }
-    } catch (err) {
-      return fail('Error resolving harness path: ' + err.message);
-    }
-  } else {
-    log('Five-Role Team Plugin Installer');
-    log('Installation logic coming soon...');
-    log('Run with --help to see usage information.');
-    return result;
+  // Validate the harness resolves before asking anything (missing --harness is
+  // already rejected by parseArgs).
+  try {
+    resolveHarnessPath(parsed.harness, parsed.global);
+  } catch (err) {
+    return fail('Error resolving harness path: ' + err.message);
   }
 
   const hasModelFlag = Object.keys(parsed.agentModels).length > 0;
@@ -487,18 +497,33 @@ async function main(argv = args, options = {}) {
   // Rollback state: only what THIS run creates is ever removed on failure.
   // A confirmed/--force overwrite moves the old install aside to a hidden
   // sibling first; on failure it is restored, on success it is deleted.
-  const tx = { secondary: null, primary: null, backup: null, createdDirs: [], sourceDir };
+  const tx = { secondary: null, primary: null, backup: null, secondaryBackup: null, createdDirs: [], sourceDir };
   let resolved;
   try {
     resolved = resolveHarnessPath(parsed.harness, parsed.global);
     const existing = detectExistingInstall(resolved.primary);
-    if (existing) {
+    // A pi secondary that already links to the primary is fine (it is correct
+    // again after reinstall); anything else there would block linkSecondary.
+    const secConflict = detectSecondaryConflict(resolved.primary, resolved.secondary);
+    if (existing || secConflict) {
       if (!parsed.force) {
-        const ok = await confirmOverwrite(existing, { ...promptsOption, log });
+        let ok;
+        try {
+          ok = await confirmOverwrite(existing, { ...promptsOption, log, secondary: secConflict });
+        } catch (err) {
+          if (err.code === 'NON_INTERACTIVE') return fail('Error: ' + err.message);
+          throw err;
+        }
         if (!ok) return cancel();
       }
-      tx.backup = moveAsideExistingInstall(resolved.primary, { sourceDir, expected: resolved.primary });
-      if (tx.backup) log('Removed existing installation at ' + existing.path);
+      if (existing) {
+        tx.backup = moveAsideExistingInstall(resolved.primary, { sourceDir, expected: resolved.primary });
+        if (tx.backup) log('Removed existing installation at ' + existing.path);
+      }
+      if (secConflict) {
+        tx.secondaryBackup = moveAsideExistingInstall(resolved.secondary, { sourceDir, expected: resolved.secondary });
+        if (tx.secondaryBackup) log('Removed existing secondary location at ' + secConflict.path);
+      }
     }
     try {
       ensureInstallDirectories(resolved).createdPaths.forEach(d => tx.createdDirs.push(d));
@@ -529,21 +554,23 @@ async function main(argv = args, options = {}) {
     }
   } catch (err) {
     const lines = ['Error: ' + err.message];
-    if (tx.backup || tx.primary || tx.createdDirs.length > 0) {
+    if (tx.backup || tx.secondaryBackup || tx.primary || tx.createdDirs.length > 0) {
       // tx.primary is only set once the write phase started, so its target
       // was absent before this run and is safe to remove.
       const rb = rollbackInstall(tx);
       if (rb.restored) lines.push('Partial installation rolled back; previous installation restored at ' + rb.restored);
       else if (rb.removed.length > 0 || !tx.backup) lines.push('Partial installation rolled back (created files and directories removed).');
+      if (rb.restoredSecondary) lines.push('Previous secondary location restored at ' + rb.restoredSecondary);
       rb.errors.forEach(e => lines.push('Rollback problem: ' + e));
     }
     return fail(...lines);
   }
-  if (tx.backup) {
+  for (const b of [tx.backup, tx.secondaryBackup]) {
+    if (!b) continue;
     try {
-      discardBackup(tx.backup);
+      discardBackup(b);
     } catch (err) {
-      log('Warning: could not delete the previous installation backup ' + tx.backup.backup + ': ' + err.message);
+      log('Warning: could not delete the previous installation backup ' + b.backup + ': ' + err.message);
     }
   }
   return result;
@@ -557,7 +584,7 @@ const {
   promptAgentSelection,
   resolveSelectedAgents,
 } = require('./select-agents');
-const { ensureInstallDirectories, buildInstallSet, copyInstall, linkInstall, linkSecondary, detectExistingInstall, moveAsideExistingInstall, discardBackup, rollbackInstall } = require('./install-files');
+const { ensureInstallDirectories, buildInstallSet, copyInstall, linkInstall, linkSecondary, detectExistingInstall, detectSecondaryConflict, moveAsideExistingInstall, discardBackup, rollbackInstall } = require('./install-files');
 const {
   validateModel,
   expandModelName,

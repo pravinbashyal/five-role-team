@@ -82,7 +82,7 @@ async function run(argv, promptsImpl) {
 
   // Real CLI: exit codes and no stack traces
   const cli = path.join(__dirname, 'install.js');
-  let p = spawnSync('node', [cli, ...base, '--agents', 'worker,intern', '--agent-models', 'worker=sonnet'], { encoding: 'utf8' });
+  let p = spawnSync('node', [cli, ...base, '--agents', 'worker,intern', '--agent-models', 'worker=sonnet', '--force'], { encoding: 'utf8' }); // --force: earlier in-process runs already installed here (5.9; non-TTY refusal now exits 1)
   assert(p.status === 0 && /intern: qwen3.5:4b-mlx/.test(p.stdout), 'CLI flag-driven pi run exits 0');
   p = spawnSync('node', [cli, ...base, '--agents', 'worker', '--agent-models', 'worker='], { encoding: 'utf8' });
   assert(p.status === 1 && !/\n\s+at /.test(p.stderr) && /Error/.test(p.stderr), 'CLI invalid --agent-models: exit 1, no stack trace');

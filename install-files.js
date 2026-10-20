@@ -450,6 +450,27 @@ function detectExistingInstall(target) {
 }
 
 /**
+ * Detect a pi secondary location that would block linkSecondary: anything at
+ * `secondary` that is NOT already a symlink to `primary` (compared textually,
+ * so a link to the primary path counts as correct even while the primary is
+ * absent or about to be replaced). A correct link is not a conflict.
+ *
+ * @param {string} primary - Primary installation path
+ * @param {string|null} secondary - Secondary link path (null: nothing to check)
+ * @returns {{kind: string, path: string, linkTarget?: string}|null}
+ */
+function detectSecondaryConflict(primary, secondary) {
+  if (!secondary) return null;
+  const existing = detectExistingInstall(secondary);
+  if (!existing) return null;
+  if (existing.kind === 'symlink' || existing.kind === 'dangling-symlink') {
+    const resolvedLink = path.resolve(path.dirname(existing.path), existing.linkTarget);
+    if (resolvedLink === path.resolve(primary)) return null;
+  }
+  return existing;
+}
+
+/**
  * Remove an existing five-role-team installation at `target` (used before an
  * overwrite). Removes ONLY that exact path: a symlink is unlinked (never
  * followed, so its source is untouched); a directory is removed recursively;
@@ -557,12 +578,13 @@ function discardBackup(backup) {
  * @param {string|null} [state.secondary] - Secondary link created by this run
  * @param {string|null} [state.primary] - Primary path created by this run (it was absent before)
  * @param {{from: string, backup: string}|null} [state.backup] - Previous install moved aside
+ * @param {{from: string, backup: string}|null} [state.secondaryBackup] - Previous pi secondary moved aside
  * @param {string[]} [state.createdDirs] - Directories created by this run, outermost first
  * @param {string} [state.sourceDir] - Plugin source to protect
  * @returns {{removed: string[], restored: string|null, errors: string[]}}
  */
 function rollbackInstall(state) {
-  const out = { removed: [], restored: null, errors: [] };
+  const out = { removed: [], restored: null, restoredSecondary: null, errors: [] };
   const src = state.sourceDir ? path.resolve(state.sourceDir) : null;
   const contains = (outer, inner) => inner === outer || inner.startsWith(outer + path.sep);
   const attempt = (label, fn) => {
@@ -588,6 +610,16 @@ function rollbackInstall(state) {
       out.restored = state.backup.from;
     });
   }
+  if (state.secondaryBackup) {
+    const sb = state.secondaryBackup;
+    attempt(`restoring ${sb.from}`, () => {
+      if (fs.lstatSync(sb.from, { throwIfNoEntry: false })) {
+        throw new Error('path still exists; previous secondary kept at ' + sb.backup);
+      }
+      fs.renameSync(sb.backup, sb.from);
+      out.restoredSecondary = sb.from;
+    });
+  }
   for (const dir of (state.createdDirs || []).slice().reverse()) {
     attempt(`removing directory ${dir}`, () => {
       const st = fs.lstatSync(dir, { throwIfNoEntry: false });
@@ -603,6 +635,7 @@ function rollbackInstall(state) {
 
 module.exports = {
   detectExistingInstall,
+  detectSecondaryConflict,
   removeExistingInstall,
   moveAsideExistingInstall,
   discardBackup,

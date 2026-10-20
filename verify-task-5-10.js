@@ -114,18 +114,21 @@ const LOCAL = ['--local', '--harness', 'claude-code', '--agents', 'worker', ...M
   e = env('d');
   const primary = path.join(e.home, '.claude', 'skills', 'five-role-team');
   const secondary = path.join(e.home, '.pi', 'agent', 'skills', 'five-role-team');
-  const elsewhere = path.join(tmpRoot, 'd-elsewhere'); fs.mkdirSync(elsewhere); fs.writeFileSync(path.join(elsewhere, 'k'), 'k');
+  // 5.11: a pre-existing conflicting secondary is now moved aside, not a failure, so the
+  // failure is injected differently: only the secondary symlink call fails (EACCES), with
+  // unrelated content already present in the secondary's parent directory.
   fs.mkdirSync(path.dirname(secondary), { recursive: true });
-  fs.symlinkSync(elsewhere, secondary, 'dir'); // pre-existing, points elsewhere: linkSecondary refuses
+  fs.writeFileSync(path.join(path.dirname(secondary), 'other-skill'), 'k');
   const PI = ['--global', '--harness', 'pi', '--agents', 'worker', ...MODELS];
-  x = await run(PI);
-  assert(x.r.exitCode === 1 && /Cannot create secondary link/.test(x.err), 'pi secondary failure: original error shown');
+  const failSecondary = (o) => (s, t, ...a) => { if (path.resolve(t) === secondary) throw new Error('EACCES: injected'); return o(s, t, ...a); };
+  x = await withPatch(fs, 'symlinkSync', failSecondary, () => run(PI));
+  assert(x.r.exitCode === 1 && /Secondary symlink creation failed: EACCES: injected/.test(x.err), 'pi secondary failure: original error shown');
   assert(/rolled back/i.test(x.err) && !lst(primary), 'pi secondary failure: primary removed');
   assert(!lst(path.join(e.home, '.claude')), 'pi secondary failure: created .claude dirs removed');
-  assert(lst(secondary).isSymbolicLink() && fs.readlinkSync(secondary) === elsewhere && fs.readFileSync(path.join(elsewhere, 'k'), 'utf8') === 'k', 'pi secondary failure: pre-existing secondary and its target intact');
+  assert(!lst(secondary) && fs.readFileSync(path.join(path.dirname(secondary), 'other-skill'), 'utf8') === 'k', 'pi secondary failure: pre-existing content of secondary parent intact');
   // same with --link
-  x = await run([...PI, '--link']);
-  assert(x.r.exitCode === 1 && !lst(primary) && fs.readlinkSync(secondary) === elsewhere, 'pi --link secondary failure: primary link removed, pre-existing secondary intact');
+  x = await withPatch(fs, 'symlinkSync', failSecondary, () => run([...PI, '--link']));
+  assert(x.r.exitCode === 1 && !lst(primary) && !lst(secondary), 'pi --link secondary failure: primary link removed');
   assert(fs.existsSync(path.join(src, 'SKILL.md')), 'pi --link secondary failure: plugin source intact');
 
   // (d2) secondary creation itself fails (injected) after primary copy: secondary parent created by run is removed
