@@ -26,7 +26,7 @@
 - [x] 4.2 Implement interactive model configuration prompts for each selected agent showing defaults and verify each prompt displays current default
 - [x] 4.3 Implement model name expansion (opus → full anthropic path, sonnet → full path, haiku as-is, full paths unchanged) and verify expansion works correctly
 - [x] 4.4 Implement non-interactive model configuration from `--agent-models` flag with key=value parsing and verify model override works
-- [ ] 4.5 Add validation that model string is non-empty and verify error on empty model
+- [x] 4.5 Add validation that model string is non-empty and verify error on empty model
 
 ## 5. Installation Logic
 

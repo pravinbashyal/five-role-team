@@ -26,14 +26,27 @@ function expandModelName(name) {
 }
 
 /**
+ * Validate that a model string is non-empty (after trimming).
+ *
+ * @param {*} value
+ * @returns {true|string} true if valid, otherwise an error message
+ */
+function validateModel(value) {
+  return typeof value === 'string' && value.trim().length > 0
+    ? true
+    : 'Model must not be empty';
+}
+
+/**
  * Build the prompts question object for one agent's model.
  * The current default is shown in the message and pre-filled as `initial`,
  * so pressing enter accepts it. Agents without a default (e.g. intern, which
- * has no source file) show "no default" and start empty.
+ * has no source file) show "no default" and start empty; an empty answer is
+ * rejected by `validate`, so the user is re-prompted.
  *
  * @param {string} agentId
  * @param {string|undefined} defaultModel - Default model from source frontmatter, if any
- * @returns {{ type: 'text', name: string, message: string, initial: string }}
+ * @returns {{ type: 'text', name: string, message: string, initial: string, validate: function }}
  */
 function buildModelPromptQuestion(agentId, defaultModel) {
   const hasDefault = typeof defaultModel === 'string' && defaultModel.length > 0;
@@ -44,6 +57,7 @@ function buildModelPromptQuestion(agentId, defaultModel) {
       ? `Model for ${agentId} (default: ${defaultModel}):`
       : `Model for ${agentId} (no default):`,
     initial: hasDefault ? defaultModel : '',
+    validate: validateModel,
   };
 }
 
@@ -54,8 +68,9 @@ function buildModelPromptQuestion(agentId, defaultModel) {
  * @param {object} defaults - Map of agent id → default model (see readDefaultModels)
  * @param {object} [options]
  * @param {typeof defaultPrompts} [options.promptsImpl] - Injectable prompts module for tests
- * @returns {Promise<object|null>} Map of agent id → chosen model (agents with an empty
- *   answer and no default are omitted), or null if the user cancelled
+ * @returns {Promise<object|null>} Map of agent id → chosen model, or null if the user
+ *   cancelled
+ * @throws {Error} If an answer is empty (defence in depth; the prompt itself rejects it)
  */
 async function promptModelConfiguration(agentIds, defaults = {}, options = {}) {
   const promptsImpl = options.promptsImpl || defaultPrompts;
@@ -72,10 +87,10 @@ async function promptModelConfiguration(agentIds, defaults = {}, options = {}) {
       return null;
     }
 
-    const model = typeof response.model === 'string' ? response.model.trim() : '';
-    if (model.length > 0) {
-      models[id] = expandModelName(model);
+    if (validateModel(response.model) !== true) {
+      throw new Error(`Model for ${id} must not be empty`);
     }
+    models[id] = expandModelName(response.model);
   }
 
   return models;
@@ -84,27 +99,31 @@ async function promptModelConfiguration(agentIds, defaults = {}, options = {}) {
 /**
  * Resolve models non-interactively from parsed --agent-models overrides.
  * Overrides (expanded) win over source defaults (also expanded, matching the
- * interactive flow). Overrides for agents that are not selected are ignored;
- * agents with neither an override nor a default are omitted.
+ * interactive flow). Overrides for agents that are not selected are ignored.
+ * Every selected agent must resolve to a non-empty model.
  *
  * @param {string[]} agentIds - Selected agent ids
  * @param {object} defaults - Map of agent id → default model (see readDefaultModels)
  * @param {object} agentModels - Map of agent id → model from parseArgs().agentModels
  * @returns {object} Map of agent id → resolved model
+ * @throws {Error} If a selected agent has an empty/blank override, or no override
+ *   and no default
  */
 function resolveAgentModels(agentIds, defaults = {}, agentModels = {}) {
   const has = (obj, key) => Object.prototype.hasOwnProperty.call(obj, key);
   const models = {};
   for (const id of agentIds) {
     const raw = has(agentModels, id) ? agentModels[id] : defaults[id];
-    if (typeof raw === 'string' && raw.trim().length > 0) {
-      models[id] = expandModelName(raw);
+    if (validateModel(raw) !== true) {
+      throw new Error(`Model for ${id} must not be empty`);
     }
+    models[id] = expandModelName(raw);
   }
   return models;
 }
 
 module.exports = {
+  validateModel,
   expandModelName,
   resolveAgentModels,
   buildModelPromptQuestion,
