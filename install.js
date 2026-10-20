@@ -342,37 +342,110 @@ CONFIGURATION:
 }
 
 /**
- * Main installation logic
+ * Main installation logic (currently: argument validation, agent selection and
+ * model configuration; file installation is added by later tasks).
+ *
+ * Selection rules:
+ * - --agents given: resolveSelectedAgents (non-interactive); otherwise, if
+ *   --agent-models is given, all agents available for the harness are used
+ *   without prompting; otherwise promptAgentSelection runs.
+ * - --agent-models given: resolveAgentModels (non-interactive); otherwise
+ *   promptModelConfiguration runs (also when only --agents was given).
+ * - A null prompt result (user cancel) exits cleanly with code 0.
+ * - Validation errors are printed as `Error: <message>` with exit code 1.
+ *
+ * @param {string[]} [argv] - Arguments (defaults to process.argv.slice(2))
+ * @param {object} [options]
+ * @param {object} [options.promptsImpl] - Injectable prompts module for tests
+ * @param {string} [options.sourceDir] - Plugin source root for default models
+ * @param {function} [options.log] - stdout logger (default console.log)
+ * @param {function} [options.error] - stderr logger (default console.error)
+ * @returns {Promise<{exitCode: number, selectedAgents: string[]|null, models: object|null, cancelled: boolean}>}
  */
-async function main() {
-  const parsed = parseArgs(args);
+async function main(argv = args, options = {}) {
+  const log = options.log || console.log;
+  const error = options.error || console.error;
+  const sourceDir = options.sourceDir || __dirname;
+  const promptsOption = options.promptsImpl ? { promptsImpl: options.promptsImpl } : {};
+  const result = { exitCode: 0, selectedAgents: null, models: null, cancelled: false };
+  const fail = (...lines) => {
+    lines.forEach(line => error(line));
+    result.exitCode = 1;
+    return result;
+  };
+
+  const parsed = parseArgs(argv);
   
   // Check for parsing and validation errors
   if (parsed.errors.length > 0) {
-    console.error('Error parsing arguments:');
-    parsed.errors.forEach(err => console.error('  -', err));
-    process.exit(1);
+    return fail('Error parsing arguments:', ...parsed.errors.map(err => '  - ' + err));
   }
   
   // If harness is provided, resolve and display paths for verification
   if (parsed.harness) {
     try {
       const resolved = resolveHarnessPath(parsed.harness, parsed.global);
-      console.log('Harness path resolution:');
-      console.log('  Base:', resolved.base);
-      console.log('  Primary:', resolved.primary);
+      log('Harness path resolution:');
+      log('  Base: ' + resolved.base);
+      log('  Primary: ' + resolved.primary);
       if (resolved.secondary) {
-        console.log('  Secondary (symlink):', resolved.secondary);
+        log('  Secondary (symlink): ' + resolved.secondary);
       }
     } catch (err) {
-      console.error('Error resolving harness path:', err.message);
-      process.exit(1);
+      return fail('Error resolving harness path: ' + err.message);
     }
   } else {
-    console.log('Five-Role Team Plugin Installer');
-    console.log('Installation logic coming soon...');
-    console.log('Run with --help to see usage information.');
+    log('Five-Role Team Plugin Installer');
+    log('Installation logic coming soon...');
+    log('Run with --help to see usage information.');
+    return result;
   }
+
+  const hasModelFlag = Object.keys(parsed.agentModels).length > 0;
+  const cancel = () => {
+    log('Installation cancelled.');
+    result.cancelled = true;
+    result.selectedAgents = null;
+    result.models = null;
+    return result;
+  };
+
+  try {
+    // Agent selection (section 3)
+    let selectedAgents;
+    if (parsed.agents !== null || hasModelFlag) {
+      const resolution = resolveSelectedAgents({ agents: parsed.agents, harness: parsed.harness });
+      if (resolution.errors.length > 0) {
+        return fail(...resolution.errors.map(msg => 'Error: ' + msg));
+      }
+      selectedAgents = resolution.selectedAgents;
+    } else {
+      selectedAgents = await promptAgentSelection({
+        ...promptsOption,
+        choiceOptions: { harness: parsed.harness }
+      });
+      if (selectedAgents === null) return cancel();
+    }
+
+    // Model configuration (section 4)
+    const defaults = readDefaultModels(selectedAgents, sourceDir);
+    let models;
+    if (hasModelFlag) {
+      models = resolveAgentModels(selectedAgents, defaults, parsed.agentModels);
+    } else {
+      models = await promptModelConfiguration(selectedAgents, defaults, promptsOption);
+      if (models === null) return cancel();
+    }
+
+    result.selectedAgents = selectedAgents;
+    result.models = models;
+  } catch (err) {
+    return fail('Error: ' + err.message);
+  }
+
+  log('Selected agents and models:');
+  result.selectedAgents.forEach(id => log('  ' + id + ': ' + result.models[id]));
+  return result;
 }
 
 
@@ -406,11 +479,14 @@ module.exports = {
   buildModelPromptQuestion,
   promptModelConfiguration,
   resolveAgentModels,
+  main,
 };
 
 // Run main if not showing help
 if (require.main === module && !args.includes('--help') && !args.includes('-h')) {
-  main().catch(err => {
+  main().then(result => {
+    if (result.exitCode !== 0) process.exit(result.exitCode);
+  }).catch(err => {
     console.error('Error:', err.message);
     process.exit(1);
   });
