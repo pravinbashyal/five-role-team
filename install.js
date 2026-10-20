@@ -430,7 +430,10 @@ async function main(argv = args, options = {}) {
     // Model configuration (section 4)
     const defaults = readDefaultModels(selectedAgents, sourceDir);
     let models;
-    if (hasModelFlag) {
+    // Any flag skips the prompt it covers: --agent-models covers models, and
+    // --agents covers both selection and model defaults (no model prompts).
+    // Only with no flags at all do both prompts run.
+    if (hasModelFlag || parsed.agents !== null) {
       models = resolveAgentModels(selectedAgents, defaults, parsed.agentModels);
     } else {
       models = await promptModelConfiguration(selectedAgents, defaults, promptsOption);

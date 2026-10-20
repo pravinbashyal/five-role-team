@@ -41,15 +41,23 @@ async function run(argv, promptsImpl) {
   assert(seen[0] === 'agents' && seen.filter(n => n === 'model').length === 2, 'interactive: agent prompt then one model prompt per agent');
   assert(x.r.models.intern === 'qwen3.5:4b-mlx', 'interactive: intern default accepted');
 
-  // --agents only: agent prompt skipped, model prompts run
+  // --agents only: no prompts at all; models from source defaults
   seen.length = 0;
   x = await run([...base, '--agents', 'worker'], stub);
-  assert(x.r.exitCode === 0 && seen.join() === 'model', '--agents alone: only model prompts run');
+  assert(x.r.exitCode === 0 && seen.length === 0, '--agents alone: no agent or model prompts run');
+  assert(x.r.selectedAgents.join() === 'worker' && x.r.models.worker === 'haiku', '--agents alone: model is source default (agents/worker.md)');
+  x = await run([...base, '--agents', 'worker,intern'], noPrompt);
+  assert(x.r.exitCode === 0 && x.r.selectedAgents.join() === 'worker,intern', '--agents worker,intern (pi): never prompts');
+  assert(x.r.models.worker === 'haiku' && x.r.models.intern === 'qwen3.5:4b-mlx', '--agents worker,intern (pi): worker=haiku, intern=qwen3.5:4b-mlx');
+
+  // claude-code architect default from source (opus expanded)
+  x = await run(['--global', '--harness', 'claude-code', '--agents', 'architect'], noPrompt);
+  assert(x.r.exitCode === 0 && x.r.models.architect === 'anthropic/claude-opus-4-5-20251101', 'claude-code architect: default opus expanded exactly');
 
   // Cancel at agent prompt and at model prompt
   x = await run(base, async () => ({}));
   assert(x.r.exitCode === 0 && x.r.cancelled && x.r.selectedAgents === null && !x.err, 'cancel at agent prompt: clean exit');
-  x = await run([...base, '--agents', 'worker'], async (q, o) => { o.onCancel(); return {}; });
+  x = await run(base, async (q, o) => { if (q.name === 'agents') return { agents: ['worker'] }; o.onCancel(); return {}; });
   assert(x.r.exitCode === 0 && x.r.cancelled && !x.err, 'cancel at model prompt: clean exit');
 
   // Invalid inputs
@@ -58,8 +66,8 @@ async function run(argv, promptsImpl) {
   x = await run([...base, '--agents', 'ghost', '--agent-models', 'ghost=x']);
   assert(x.r.exitCode === 1 && /^Error: .*ghost/m.test(x.err), 'unknown agent: clear Error message');
   x = await run([...base, '--agents', 'ghost2', '--agent-models', 'worker=sonnet']);
-  assert(x.r.exitCode === 1 && !/\n\s+at /.test(x.err), 'no stack trace in error output');
-  x = await run([...base, '--agents', 'worker'], async (q) => ({ model: '' }));
+  assert(x.r.exitCode === 1 && /^Error: .*ghost2/m.test(x.err) && !/\n\s+at /.test(x.err), 'ghost2: expected error message, no stack trace');
+  x = await run(base, async (q) => q.name === 'agents' ? { agents: ['worker'] } : { model: '' });
   assert(x.r.exitCode === 1 && /^Error: Model for worker must not be empty$/m.test(x.err), 'empty interactive answer: clear error');
 
   // Real CLI: exit codes and no stack traces
