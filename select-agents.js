@@ -150,6 +150,75 @@ function buildAgentSelectPromptQuestion(options) {
  * @param {object} [options.choiceOptions] - Passed to {@link buildAgentSelectChoices}
  * @returns {Promise<string[]|null>} Selected agent ids, or null if user cancelled
  */
+/** @type {ReadonlySet<string>} */
+const KNOWN_AGENT_IDS = new Set(AGENT_CATALOG.map((agent) => agent.id));
+
+/**
+ * Resolve agent selection for non-interactive `--agents` (and future interactive default path).
+ *
+ * @param {object} options
+ * @param {string[]|null|undefined} options.agents - Parsed `--agents` list; null/undefined means not provided (interactive)
+ * @param {string|null|undefined} options.harness - Harness from `--harness`
+ * @returns {{ selectedAgents: string[]|null, errors: string[] }}
+ */
+function resolveSelectedAgents(options = {}) {
+  const { agents, harness } = options;
+  const errors = [];
+
+  if (agents === null || agents === undefined) {
+    return { selectedAgents: null, errors };
+  }
+
+  if (!Array.isArray(agents)) {
+    errors.push('--agents: expected a list of agent ids');
+    return { selectedAgents: null, errors };
+  }
+
+  if (agents.length === 0) {
+    errors.push('--agents: at least one agent must be specified');
+    return { selectedAgents: null, errors };
+  }
+
+  const unknown = [];
+  const selectedAgents = [];
+  const seen = new Set();
+
+  for (const rawId of agents) {
+    const id = typeof rawId === 'string' ? rawId.trim() : '';
+    if (id.length === 0) {
+      continue;
+    }
+    if (!KNOWN_AGENT_IDS.has(id)) {
+      unknown.push(id);
+      continue;
+    }
+    if (!seen.has(id)) {
+      seen.add(id);
+      selectedAgents.push(id);
+    }
+  }
+
+  if (unknown.length > 0) {
+    const knownList = AGENT_CATALOG.map((agent) => agent.id).join(', ');
+    errors.push(
+      `--agents: unknown agent(s): ${unknown.join(', ')} (known: ${knownList})`
+    );
+    return { selectedAgents: null, errors };
+  }
+
+  if (selectedAgents.length === 0) {
+    errors.push('--agents: at least one agent must be specified');
+    return { selectedAgents: null, errors };
+  }
+
+  if (selectionIncludesInvalidIntern(selectedAgents, harness)) {
+    errors.push(formatInternRequiresPiMessage());
+    return { selectedAgents: null, errors };
+  }
+
+  return { selectedAgents, errors };
+}
+
 async function promptAgentSelection(options = {}) {
   const promptsImpl = options.promptsImpl || defaultPrompts;
   const choiceOptions = options.choiceOptions || {};
@@ -178,6 +247,7 @@ async function promptAgentSelection(options = {}) {
 
 module.exports = {
   AGENT_CATALOG,
+  KNOWN_AGENT_IDS,
   INTERN_REQUIRES_PI_WARNING,
   INTERN_REQUIRES_PI_PROMPT,
   isPiHarness,
@@ -186,5 +256,6 @@ module.exports = {
   selectionIncludesInvalidIntern,
   buildAgentSelectChoices,
   buildAgentSelectPromptQuestion,
+  resolveSelectedAgents,
   promptAgentSelection,
 };

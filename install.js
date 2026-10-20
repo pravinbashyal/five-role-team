@@ -336,6 +336,7 @@ const {
   buildAgentSelectChoices,
   buildAgentSelectPromptQuestion,
   promptAgentSelection,
+  resolveSelectedAgents,
 } = require('./select-agents');
 
 // Export functions for testing
@@ -346,6 +347,7 @@ module.exports = {
   buildAgentSelectChoices,
   buildAgentSelectPromptQuestion,
   promptAgentSelection,
+  resolveSelectedAgents,
 };
 
 // Run main if not showing help
