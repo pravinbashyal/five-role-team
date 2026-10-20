@@ -73,7 +73,7 @@ assert(
 
   const selected = await promptAgentSelection({
     promptsImpl,
-    choiceOptions: { harness: 'claude-code', selectAllExceptIntern: false },
+    choiceOptions: { harness: 'claude-code' },
     warn: (message) => warnings.push(message),
   });
 

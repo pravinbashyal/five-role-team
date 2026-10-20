@@ -38,8 +38,13 @@ assert(
 );
 
 result = resolveSelectedAgents({ agents: null, harness: 'pi' });
-assert(result.selectedAgents === null, 'null agents leaves selection unset');
 assert(result.errors.length === 0, 'null agents produces no errors');
+assert(
+  result.selectedAgents &&
+    result.selectedAgents.join(',') ===
+      'architect,designer,worker,reviewer,supervisor,intern',
+  'omitted --agents defaults to all agents for pi harness'
+);
 
 result = resolveSelectedAgents({
   agents: ['designer', 'supervisor'],

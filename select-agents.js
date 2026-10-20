@@ -97,17 +97,33 @@ function formatAgentChoiceTitle(agent) {
 }
 
 /**
+ * Agent ids available for the given harness (excludes intern when harness is not pi).
+ *
+ * @param {string|null|undefined} harness
+ * @returns {string[]}
+ */
+function getAvailableAgentsForHarness(harness) {
+  const internAllowed = harness === undefined || harness === null ? true : isPiHarness(harness);
+  return AGENT_CATALOG.filter(
+    (agent) => agent.id !== INTERN_AGENT_ID || internAllowed
+  ).map((agent) => agent.id);
+}
+
+/**
  * Build prompts multiselect `choices` for agent selection.
  * Exported for verification without a TTY.
  *
  * @param {object} [options]
- * @param {boolean} [options.selectAllExceptIntern=true] - Initial selection in the prompt UI
+ * @param {boolean} [options.selectAllAvailable=true] - Pre-select every agent available for the harness
  * @param {string} [options.harness] - When set and not pi, intern choice is disabled
  * @returns {Array<{ title: string, value: string, selected?: boolean, disabled?: boolean }>}
  */
 function buildAgentSelectChoices(options = {}) {
-  const { selectAllExceptIntern = true, harness } = options;
+  const { selectAllAvailable = true, harness } = options;
   const internAllowed = harness === undefined ? true : isPiHarness(harness);
+  const defaultSelected = selectAllAvailable
+    ? new Set(getAvailableAgentsForHarness(harness))
+    : new Set();
 
   return AGENT_CATALOG.map((agent) => {
     const choice = {
@@ -117,10 +133,8 @@ function buildAgentSelectChoices(options = {}) {
     if (agent.id === INTERN_AGENT_ID && !internAllowed) {
       choice.disabled = true;
       choice.selected = false;
-    } else if (selectAllExceptIntern) {
-      choice.selected = agent.id !== INTERN_AGENT_ID;
     } else {
-      choice.selected = true;
+      choice.selected = defaultSelected.has(agent.id);
     }
     return choice;
   });
@@ -166,7 +180,10 @@ function resolveSelectedAgents(options = {}) {
   const errors = [];
 
   if (agents === null || agents === undefined) {
-    return { selectedAgents: null, errors };
+    return {
+      selectedAgents: getAvailableAgentsForHarness(harness),
+      errors,
+    };
   }
 
   if (!Array.isArray(agents)) {
@@ -251,6 +268,7 @@ module.exports = {
   INTERN_REQUIRES_PI_WARNING,
   INTERN_REQUIRES_PI_PROMPT,
   isPiHarness,
+  getAvailableAgentsForHarness,
   formatAgentChoiceTitle,
   formatInternRequiresPiMessage,
   selectionIncludesInvalidIntern,
