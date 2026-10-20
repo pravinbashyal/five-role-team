@@ -40,8 +40,8 @@ function validateModel(value) {
 /**
  * Build the prompts question object for one agent's model.
  * The current default is shown in the message and pre-filled as `initial`,
- * so pressing enter accepts it. Agents without a default (e.g. intern, which
- * has no source file) show "no default" and start empty; an empty answer is
+ * so pressing enter accepts it. Agents without a default
+ * show "no default" and start empty; an empty answer is
  * rejected by `validate`, so the user is re-prompted.
  *
  * @param {string} agentId

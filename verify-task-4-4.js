@@ -25,11 +25,11 @@ assert(models.worker !== defaults.worker, 'override differs from default');
   const sel = resolveSelectedAgents({ agents: p.agents, harness: p.harness });
   assert(sel.selectedAgents.includes('intern'), 'pi default selection includes intern');
   const d = readDefaultModels(sel.selectedAgents);
-  assert(d.intern === 'haiku', 'intern has default from pi/agents/intern.md');
+  assert(d.intern === 'qwen3.5:4b-mlx', 'intern has default from pi/agents/intern.md');
   let m = null, err = null;
   try { m = resolveAgentModels(sel.selectedAgents, d, p.agentModels); } catch (e) { err = e; }
   assert(!err && m, 'composed pi flow succeeds' + (err ? ': ' + err.message : ''));
-  assert(m && m.intern === 'haiku' && m.worker === expandModelName('sonnet') && m.reviewer === expandModelName('opus'), 'intern default, overrides expanded');
+  assert(m && m.intern === 'qwen3.5:4b-mlx' && m.worker === expandModelName('sonnet') && m.reviewer === expandModelName('opus'), 'intern default, overrides expanded');
 }
 
 process.exit(failed ? 1 : 0);
