@@ -330,8 +330,52 @@ function copyInstall(sourceDir, targetDir, installSet, models) {
   return written;
 }
 
+/**
+ * Symlink mode installation: create a single symlink at `targetDir` pointing
+ * at the plugin source directory (spec: "a symlink is created at
+ * ~/.claude/skills/five-role-team/ pointing to the source directory").
+ *
+ * The whole source directory is exposed, so agent selection and model
+ * configuration cannot be applied (rewriting a linked agent file would modify
+ * the source). The caller is expected to tell the user.
+ * - Never overwrites or removes anything: if `targetDir` exists in any form
+ *   (file, directory, symlink, dangling symlink) this throws.
+ * - The parent directory of targetDir must already exist (ensureInstallDirectories).
+ *
+ * @param {string} sourceDir - Plugin source root (must contain SKILL.md)
+ * @param {string} targetDir - Path where the symlink is created
+ * @returns {{target: string, source: string}} Absolute link path and link destination
+ * @throws {Error} with a clear message on any failure
+ */
+function linkInstall(sourceDir, targetDir) {
+  if (typeof sourceDir !== 'string' || sourceDir.trim().length === 0) {
+    throw new Error('Plugin source directory is required');
+  }
+  if (typeof targetDir !== 'string' || targetDir.trim().length === 0) {
+    throw new Error('Installation target directory is required');
+  }
+  const source = path.resolve(sourceDir);
+  const target = path.resolve(targetDir);
+  if (!fs.existsSync(path.join(source, 'SKILL.md'))) {
+    throw new Error(`Not a plugin source directory: SKILL.md not found in ${source}`);
+  }
+  if (target === source || target.startsWith(source + path.sep)) {
+    throw new Error(`Cannot link ${target}: target is inside the plugin source directory`);
+  }
+  if (fs.lstatSync(target, { throwIfNoEntry: false })) {
+    throw new Error(`Cannot link ${target}: path already exists (remove it first)`);
+  }
+  try {
+    fs.symlinkSync(source, target, 'dir');
+  } catch (err) {
+    throw new Error(`Symlink installation failed: ${err.message}`);
+  }
+  return { target, source };
+}
+
 module.exports = {
   copyInstall,
+  linkInstall,
   ensureDirectory,
   ensureInstallDirectories,
   buildInstallSet,

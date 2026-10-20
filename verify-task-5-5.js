@@ -77,11 +77,11 @@ function listFiles(dir, rel = '') {
   x = await run(['--global', '--harness', custom, '--agents', 'architect']);
   assert(x.r.exitCode === 0 && fs.existsSync(path.join(custom, 'five-role-team', 'agents', 'architect.md')), 'custom path: missing parents created, files copied');
 
-  // --link: not supported, nothing written
+  // --link (implemented in 5.6): creates a symlink, not a copy
   const linkPath = path.join(tmpRoot, 'linkdir');
   x = await run(['--global', '--harness', linkPath, '--agents', 'architect', '--link']);
-  assert(x.r.exitCode === 1 && /^Error: .*--link.*not yet supported/m.test(x.err) && !/\n\s+at /.test(x.err), '--link: not-supported error');
-  assert(!fs.existsSync(linkPath), '--link: nothing copied');
+  assert(x.r.exitCode === 0 && fs.lstatSync(path.join(linkPath, 'five-role-team')).isSymbolicLink(), '--link: creates symlink (5.6)');
+  assert(!fs.existsSync(path.join(linkPath, 'five-role-team', 'agents', 'worker.md.copied')), '--link: nothing copied');
 
   // errors surfaced cleanly: target parent is a file
   const blocker = path.join(tmpRoot, 'blocker'); fs.writeFileSync(blocker, 'x');
@@ -99,7 +99,7 @@ function listFiles(dir, rel = '') {
   const p = spawnSync('node', [path.join(src, 'install.js'), '--local', '--harness', 'claude-code', '--agents', 'supervisor'], { encoding: 'utf8', cwd: work });
   assert(p.status === 0 && fs.existsSync(path.join(t, 'agents', 'supervisor.md')), 'CLI: copy install exit 0');
   const q = spawnSync('node', [path.join(src, 'install.js'), '--local', '--harness', 'claude-code', '--agents', 'supervisor', '--link'], { encoding: 'utf8', cwd: work });
-  assert(q.status === 1 && /not yet supported/.test(q.stderr), 'CLI --link: exit 1');
+  assert(q.status === 1 && /already exists/.test(q.stderr), 'CLI --link onto existing target: exit 1');
 
   assert(!fs.existsSync(path.join(fakeHome, '.claude')), 'fake home .claude untouched by local/custom installs');
   process.exit(failed ? 1 : 0);
