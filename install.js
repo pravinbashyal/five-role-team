@@ -484,33 +484,67 @@ async function main(argv = args, options = {}) {
 
   // File installation (section 5). Uninstall is handled by a later section.
   if (parsed.uninstall) return result;
+  // Rollback state: only what THIS run creates is ever removed on failure.
+  // A confirmed/--force overwrite moves the old install aside to a hidden
+  // sibling first; on failure it is restored, on success it is deleted.
+  const tx = { secondary: null, primary: null, backup: null, createdDirs: [], sourceDir };
+  let resolved;
   try {
-    const resolved = resolveHarnessPath(parsed.harness, parsed.global);
+    resolved = resolveHarnessPath(parsed.harness, parsed.global);
     const existing = detectExistingInstall(resolved.primary);
     if (existing) {
       if (!parsed.force) {
         const ok = await confirmOverwrite(existing, { ...promptsOption, log });
         if (!ok) return cancel();
       }
-      removeExistingInstall(resolved.primary, { sourceDir, expected: resolved.primary });
-      log('Removed existing installation at ' + existing.path);
+      tx.backup = moveAsideExistingInstall(resolved.primary, { sourceDir, expected: resolved.primary });
+      if (tx.backup) log('Removed existing installation at ' + existing.path);
     }
-    ensureInstallDirectories(resolved);
+    try {
+      ensureInstallDirectories(resolved).createdPaths.forEach(d => tx.createdDirs.push(d));
+    } catch (err) {
+      if (err.createdPaths) err.createdPaths.forEach(d => tx.createdDirs.push(d));
+      throw err;
+    }
     if (parsed.link) {
+      tx.primary = resolved.primary; // absent here (moved aside / never existed)
       const linked = linkInstall(sourceDir, resolved.primary);
       log('Note: symlink mode links the whole source directory; agent selection and model configuration are not applied.');
       log('Linked ' + linked.target + ' -> ' + linked.source);
       const sec = linkSecondary(resolved.primary, resolved.secondary);
-      if (sec) log('Linked ' + sec.target + ' -> ' + sec.source);
-      return result;
+      if (sec) {
+        if (!sec.existed) tx.secondary = sec.target;
+        log('Linked ' + sec.target + ' -> ' + sec.source);
+      }
+    } else {
+      const installSet = buildInstallSet(sourceDir, result.selectedAgents, parsed.harness);
+      tx.primary = resolved.primary;
+      const written = copyInstall(sourceDir, resolved.primary, installSet, result.models);
+      log('Installed ' + written.files.length + ' files to ' + written.target);
+      const sec = linkSecondary(resolved.primary, resolved.secondary);
+      if (sec) {
+        if (!sec.existed) tx.secondary = sec.target;
+        log('Linked ' + sec.target + ' -> ' + sec.source);
+      }
     }
-    const installSet = buildInstallSet(sourceDir, result.selectedAgents, parsed.harness);
-    const written = copyInstall(sourceDir, resolved.primary, installSet, result.models);
-    log('Installed ' + written.files.length + ' files to ' + written.target);
-    const sec = linkSecondary(resolved.primary, resolved.secondary);
-    if (sec) log('Linked ' + sec.target + ' -> ' + sec.source);
   } catch (err) {
-    return fail('Error: ' + err.message);
+    const lines = ['Error: ' + err.message];
+    if (tx.backup || tx.primary || tx.createdDirs.length > 0) {
+      // tx.primary is only set once the write phase started, so its target
+      // was absent before this run and is safe to remove.
+      const rb = rollbackInstall(tx);
+      if (rb.restored) lines.push('Partial installation rolled back; previous installation restored at ' + rb.restored);
+      else if (rb.removed.length > 0 || !tx.backup) lines.push('Partial installation rolled back (created files and directories removed).');
+      rb.errors.forEach(e => lines.push('Rollback problem: ' + e));
+    }
+    return fail(...lines);
+  }
+  if (tx.backup) {
+    try {
+      discardBackup(tx.backup);
+    } catch (err) {
+      log('Warning: could not delete the previous installation backup ' + tx.backup.backup + ': ' + err.message);
+    }
   }
   return result;
 }
@@ -523,7 +557,7 @@ const {
   promptAgentSelection,
   resolveSelectedAgents,
 } = require('./select-agents');
-const { ensureInstallDirectories, buildInstallSet, copyInstall, linkInstall, linkSecondary, detectExistingInstall, removeExistingInstall } = require('./install-files');
+const { ensureInstallDirectories, buildInstallSet, copyInstall, linkInstall, linkSecondary, detectExistingInstall, moveAsideExistingInstall, discardBackup, rollbackInstall } = require('./install-files');
 const {
   validateModel,
   expandModelName,

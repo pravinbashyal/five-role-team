@@ -14,7 +14,8 @@ const { isPiHarness } = require('./select-agents');
  * - creation fails for any other reason (e.g. dangling symlink)
  *
  * @param {string} dir - Directory path (absolute, or relative to cwd)
- * @returns {{path: string, created: boolean}} Absolute path and whether it was created
+ * @returns {{path: string, created: boolean, createdPaths?: string[]}} Absolute path, whether it was
+ *   created, and (when created) every directory this call created, outermost first
  * @throws {Error} with a clear message if the directory is invalid or cannot be created
  */
 function ensureDirectory(dir) {
@@ -41,6 +42,8 @@ function ensureDirectory(dir) {
   }
 
   // Missing: find the nearest existing ancestor and validate it first.
+  // `missing` collects every path this call will create (innermost first).
+  const missing = [target];
   let ancestor = path.dirname(target);
   for (;;) {
     let ancestorStat = null;
@@ -63,6 +66,7 @@ function ensureDirectory(dir) {
       );
       break;
     }
+    missing.push(ancestor);
     const next = path.dirname(ancestor);
     if (next === ancestor) break;
     ancestor = next;
@@ -73,7 +77,7 @@ function ensureDirectory(dir) {
   } catch (err) {
     throw new Error(`Cannot create ${target}: ${err.message}`);
   }
-  return { path: target, created: true };
+  return { path: target, created: true, createdPaths: missing.reverse() };
 }
 
 function assertWritable(dir, message) {
@@ -94,7 +98,8 @@ function assertWritable(dir, message) {
  * here: later steps copy into / link at those paths.
  *
  * @param {{base: string, primary: string, secondary: string|null}} resolved
- * @returns {{created: string[], existing: string[]}} Absolute directory paths by outcome
+ * @returns {{created: string[], existing: string[], createdPaths: string[]}} Absolute directory paths by
+ *   outcome; `createdPaths` lists every directory created (including missing ancestors), outermost first
  * @throws {Error} with a clear message if a directory is invalid or cannot be created
  */
 function ensureInstallDirectories(resolved) {
@@ -108,11 +113,19 @@ function ensureInstallDirectories(resolved) {
 
   const created = [];
   const existing = [];
+  const createdPaths = [];
   for (const dir of dirs) {
-    const r = ensureDirectory(dir);
+    let r;
+    try {
+      r = ensureDirectory(dir);
+    } catch (err) {
+      err.createdPaths = createdPaths.slice(); // so callers can roll back earlier creations
+      throw err;
+    }
     (r.created ? created : existing).push(r.path);
+    if (r.createdPaths) createdPaths.push(...r.createdPaths);
   }
-  return { created, existing };
+  return { created, existing, createdPaths };
 }
 
 /**
@@ -455,6 +468,20 @@ function detectExistingInstall(target) {
  * @returns {boolean} true if something was removed
  */
 function removeExistingInstall(target, opts = {}) {
+  const checked = checkRemovable(target, opts);
+  if (!checked) return false;
+  const { abs, existing } = checked;
+  try {
+    if (existing.isDirectory()) fs.rmSync(abs, { recursive: true });
+    else fs.unlinkSync(abs);
+  } catch (err) {
+    throw new Error(`Failed to remove existing installation ${abs}: ${err.message}`);
+  }
+  return true;
+}
+
+/** Shared safety checks for removing / moving aside an installation path. */
+function checkRemovable(target, opts) {
   if (typeof target !== 'string' || target.trim().length === 0) {
     throw new Error('Installation target directory is required');
   }
@@ -466,7 +493,7 @@ function removeExistingInstall(target, opts = {}) {
     throw new Error(`Refusing to remove ${abs}: does not match the resolved installation path`);
   }
   const existing = fs.lstatSync(abs, { throwIfNoEntry: false });
-  if (!existing) return false;
+  if (!existing) return null;
   if (opts.sourceDir) {
     const src = path.resolve(opts.sourceDir);
     const contains = (outer, inner) => inner === outer || inner.startsWith(outer + path.sep);
@@ -480,18 +507,106 @@ function removeExistingInstall(target, opts = {}) {
       throw new Error(`Refusing to remove ${abs}: it is, or contains, the plugin source directory`);
     }
   }
+  return { abs, existing };
+}
+
+const BACKUP_PREFIX = '.five-role-team.backup-';
+
+/**
+ * Move an existing installation aside to a hidden sibling
+ * (`.five-role-team.backup-<pid>-<time>`) instead of deleting it, so a failed
+ * reinstall can restore it. Same safety checks as removeExistingInstall; a
+ * symlink is renamed itself (never followed).
+ *
+ * @param {string} target - Installed plugin path
+ * @param {object} [opts] - Same as removeExistingInstall
+ * @returns {{from: string, backup: string}|null} null when nothing exists
+ */
+function moveAsideExistingInstall(target, opts = {}) {
+  const checked = checkRemovable(target, opts);
+  if (!checked) return null;
+  const backup = path.join(path.dirname(checked.abs), `${BACKUP_PREFIX}${process.pid}-${Date.now()}`);
   try {
-    if (existing.isDirectory()) fs.rmSync(abs, { recursive: true });
-    else fs.unlinkSync(abs);
+    fs.renameSync(checked.abs, backup);
   } catch (err) {
-    throw new Error(`Failed to remove existing installation ${abs}: ${err.message}`);
+    throw new Error(`Failed to remove existing installation ${checked.abs}: ${err.message}`);
   }
-  return true;
+  return { from: checked.abs, backup };
+}
+
+/** Delete a backup made by moveAsideExistingInstall (symlinks unlinked, never followed). */
+function discardBackup(backup) {
+  if (path.basename(backup.backup).indexOf(BACKUP_PREFIX) !== 0 ||
+      path.dirname(backup.backup) !== path.dirname(backup.from)) {
+    throw new Error(`Refusing to delete ${backup.backup}: not an installer backup`);
+  }
+  const st = fs.lstatSync(backup.backup, { throwIfNoEntry: false });
+  if (!st) return;
+  if (st.isDirectory()) fs.rmSync(backup.backup, { recursive: true });
+  else fs.unlinkSync(backup.backup);
+}
+
+/**
+ * Undo a failed installation. Removes only what this run created, in reverse
+ * order: secondary link, primary install, then (after restoring a moved-aside
+ * previous install) directories this run created, if still empty. Never
+ * follows symlinks and never touches the plugin source directory. Failures
+ * are collected, not thrown, so they cannot mask the original error.
+ *
+ * @param {object} state
+ * @param {string|null} [state.secondary] - Secondary link created by this run
+ * @param {string|null} [state.primary] - Primary path created by this run (it was absent before)
+ * @param {{from: string, backup: string}|null} [state.backup] - Previous install moved aside
+ * @param {string[]} [state.createdDirs] - Directories created by this run, outermost first
+ * @param {string} [state.sourceDir] - Plugin source to protect
+ * @returns {{removed: string[], restored: string|null, errors: string[]}}
+ */
+function rollbackInstall(state) {
+  const out = { removed: [], restored: null, errors: [] };
+  const src = state.sourceDir ? path.resolve(state.sourceDir) : null;
+  const contains = (outer, inner) => inner === outer || inner.startsWith(outer + path.sep);
+  const attempt = (label, fn) => {
+    try { fn(); } catch (err) { out.errors.push(`${label}: ${err.message}`); }
+  };
+  const removePath = (p) => {
+    const abs = path.resolve(p);
+    if (src && contains(abs, src)) throw new Error('refusing to remove the plugin source directory');
+    const st = fs.lstatSync(abs, { throwIfNoEntry: false });
+    if (!st) return;
+    if (st.isDirectory()) fs.rmSync(abs, { recursive: true });
+    else fs.unlinkSync(abs);
+    out.removed.push(abs);
+  };
+  if (state.secondary) attempt(`removing ${state.secondary}`, () => removePath(state.secondary));
+  if (state.primary) attempt(`removing ${state.primary}`, () => removePath(state.primary));
+  if (state.backup) {
+    attempt(`restoring ${state.backup.from}`, () => {
+      if (fs.lstatSync(state.backup.from, { throwIfNoEntry: false })) {
+        throw new Error('path still exists; previous installation kept at ' + state.backup.backup);
+      }
+      fs.renameSync(state.backup.backup, state.backup.from);
+      out.restored = state.backup.from;
+    });
+  }
+  for (const dir of (state.createdDirs || []).slice().reverse()) {
+    attempt(`removing directory ${dir}`, () => {
+      const st = fs.lstatSync(dir, { throwIfNoEntry: false });
+      if (!st || !st.isDirectory()) return;
+      if (src && contains(path.resolve(dir), src)) return;
+      if (fs.readdirSync(dir).length > 0) return; // something else lives here now: keep
+      fs.rmdirSync(dir);
+      out.removed.push(path.resolve(dir));
+    });
+  }
+  return out;
 }
 
 module.exports = {
   detectExistingInstall,
   removeExistingInstall,
+  moveAsideExistingInstall,
+  discardBackup,
+  rollbackInstall,
   linkSecondary,
   copyInstall,
   linkInstall,

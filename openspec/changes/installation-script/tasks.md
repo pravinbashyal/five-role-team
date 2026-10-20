@@ -39,7 +39,7 @@
 - [x] 5.7 Implement pi dual-location handling (copy/symlink to `~/.claude/skills/` AND symlink from `~/.pi/agent/skills/`) and verify both locations exist for pi harness
 - [x] 5.8 Implement harness-specific file handling (include `pi/` only for pi harness, so `pi/agents/intern.md` is copied or linked for pi installs and its default model `qwen3.5:4b-mlx` is read from it) and verify pi-specific files excluded for claude-code
 - [x] 5.9 Add existing installation detection and confirmation prompt (skip with `--force`) and verify overwrite warning shows
-- [ ] 5.10 Implement rollback on partial installation failure and verify partial files removed on error
+- [x] 5.10 Implement rollback on partial installation failure and verify partial files removed on error
 
 ## 6. Configuration File Generation
 
