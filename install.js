@@ -448,6 +448,21 @@ async function main(argv = args, options = {}) {
 
   log('Selected agents and models:');
   result.selectedAgents.forEach(id => log('  ' + id + ': ' + result.models[id]));
+
+  // File installation (section 5). Uninstall is handled by a later section.
+  if (parsed.uninstall) return result;
+  if (parsed.link) {
+    return fail('Error: --link (symlink mode) is not yet supported');
+  }
+  try {
+    const resolved = resolveHarnessPath(parsed.harness, parsed.global);
+    ensureInstallDirectories(resolved);
+    const installSet = buildInstallSet(sourceDir, result.selectedAgents, parsed.harness);
+    const written = copyInstall(sourceDir, resolved.primary, installSet, result.models);
+    log('Installed ' + written.files.length + ' files to ' + written.target);
+  } catch (err) {
+    return fail('Error: ' + err.message);
+  }
   return result;
 }
 
@@ -459,6 +474,7 @@ const {
   promptAgentSelection,
   resolveSelectedAgents,
 } = require('./select-agents');
+const { ensureInstallDirectories, buildInstallSet, copyInstall } = require('./install-files');
 const {
   validateModel,
   expandModelName,

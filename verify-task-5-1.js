@@ -2,7 +2,16 @@
 'use strict';
 
 const { execFileSync, spawnSync } = require('child_process');
+const fs = require('fs');
+const os = require('os');
 const path = require('path');
+
+// Redirect HOME so installs never touch the real ~/.claude or ~/.pi.
+const tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'verify-5-1-'));
+const fakeHome = path.join(tmpRoot, 'home');
+fs.mkdirSync(fakeHome);
+process.env.HOME = fakeHome;
+process.env.USERPROFILE = fakeHome;
 const { main } = require('./install.js');
 
 let failed = 0;

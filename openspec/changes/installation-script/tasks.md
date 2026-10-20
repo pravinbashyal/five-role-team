@@ -34,7 +34,7 @@
 - [x] 5.2 Implement directory validation and creation for target installation path and verify missing directories are created
 - [x] 5.3 Implement agent file filtering to only copy selected agents and verify unselected agents are excluded from installation
 - [x] 5.4 Implement agent frontmatter modification to update `model:` field with configured model and verify modified frontmatter is valid YAML
-- [ ] 5.5 Implement copy mode installation (default) with all selected agent files and verify files copied with correct content
+- [x] 5.5 Implement copy mode installation (default) with all selected agent files and verify files copied with correct content
 - [ ] 5.6 Implement symlink mode installation with `--link` flag and verify symlinks point to source directory
 - [ ] 5.7 Implement pi dual-location handling (copy/symlink to `~/.claude/skills/` AND symlink from `~/.pi/agent/skills/`) and verify both locations exist for pi harness
 - [ ] 5.8 Implement harness-specific file handling (include `pi/` only for pi harness, so `pi/agents/intern.md` is copied or linked for pi installs and its default model `qwen3.5:4b-mlx` is read from it) and verify pi-specific files excluded for claude-code

@@ -261,7 +261,77 @@ function applyModelToFrontmatter(content, model) {
   return m[1] + newBody + m[4] + content.slice(m[0].length);
 }
 
+/**
+ * Copy mode installation: materialise an install set under `targetDir`.
+ *
+ * - Directories in the set are created (recursively) under targetDir.
+ * - `agents/<id>.md` and `pi/agents/<id>.md` are written with their
+ *   frontmatter `model:` set to `models[id]` (applyModelToFrontmatter).
+ * - Every other file is copied byte-for-byte.
+ * - Existing-install detection / overwrite policy is NOT handled here.
+ *
+ * @param {string} sourceDir - Plugin source root
+ * @param {string} targetDir - Plugin install directory (e.g. <skills>/five-role-team)
+ * @param {{path: string, type: 'file'|'dir'}[]} installSet - From buildInstallSet
+ * @param {Object<string,string>} models - Agent id to model
+ * @returns {{target: string, files: string[], dirs: string[]}} Relative paths written
+ * @throws {Error} with a clear message on any failure
+ */
+function copyInstall(sourceDir, targetDir, installSet, models) {
+  if (typeof sourceDir !== 'string' || sourceDir.trim().length === 0) {
+    throw new Error('Plugin source directory is required');
+  }
+  if (typeof targetDir !== 'string' || targetDir.trim().length === 0) {
+    throw new Error('Installation target directory is required');
+  }
+  if (!Array.isArray(installSet)) {
+    throw new Error('Install set must be an array');
+  }
+  const root = path.resolve(sourceDir);
+  const target = path.resolve(targetDir);
+  if (target === root) {
+    throw new Error(`Cannot install to ${target}: target is the plugin source directory`);
+  }
+  const modelMap = models || {};
+  const agentRe = /^(?:pi\/)?agents\/([^/]+)\.md$/;
+  const written = { target, files: [], dirs: [] };
+
+  try {
+    fs.mkdirSync(target, { recursive: true });
+    for (const entry of installSet) {
+      const rel = entry.path;
+      const parts = rel.split('/');
+      if (path.isAbsolute(rel) || parts.includes('..')) {
+        throw new Error(`Invalid install path: ${rel}`);
+      }
+      const src = path.join(root, ...parts);
+      const dest = path.join(target, ...parts);
+      if (entry.type === 'dir') {
+        fs.mkdirSync(dest, { recursive: true });
+        written.dirs.push(rel);
+        continue;
+      }
+      fs.mkdirSync(path.dirname(dest), { recursive: true });
+      const agent = rel.match(agentRe);
+      if (agent) {
+        const model = modelMap[agent[1]];
+        if (!model) throw new Error(`No model configured for agent ${agent[1]}`);
+        const content = fs.readFileSync(src, 'utf8');
+        fs.writeFileSync(dest, applyModelToFrontmatter(content, model));
+      } else {
+        fs.copyFileSync(src, dest);
+      }
+      written.files.push(rel);
+    }
+  } catch (err) {
+    if (err && /^(Invalid install path|No model configured|Agent file|Model must)/.test(err.message)) throw err;
+    throw new Error(`Copy installation failed: ${err.message}`);
+  }
+  return written;
+}
+
 module.exports = {
+  copyInstall,
   ensureDirectory,
   ensureInstallDirectories,
   buildInstallSet,
