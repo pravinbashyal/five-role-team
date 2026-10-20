@@ -208,6 +208,51 @@ function resolveHarnessPath(harness, isGlobal) {
   };
 }
 
+/**
+ * Read default models from source agent frontmatter files
+ *
+ * Looks up each agent's source file (agents/<id>.md, falling back to
+ * pi/agents/<id>.md for pi-only agents) and extracts the `model:` value
+ * from its YAML frontmatter.
+ *
+ * @param {string[]} agentIds - Agent ids to read defaults for
+ * @param {string} [sourceDir] - Plugin source root (defaults to this script's directory)
+ * @returns {object} Map of agent id → default model string (e.g. { worker: 'haiku' }).
+ *   Agents with no source file or no `model:` field are omitted.
+ */
+function readDefaultModels(agentIds, sourceDir = __dirname) {
+  const defaults = {};
+
+  for (const id of agentIds) {
+    const candidates = [
+      path.join(sourceDir, 'agents', `${id}.md`),
+      path.join(sourceDir, 'pi', 'agents', `${id}.md`)
+    ];
+    const file = candidates.find(candidate => fs.existsSync(candidate));
+    if (!file) {
+      continue;
+    }
+
+    const content = fs.readFileSync(file, 'utf8');
+    const frontmatter = content.match(/^---\r?\n([\s\S]*?)\r?\n---/);
+    if (!frontmatter) {
+      continue;
+    }
+
+    const modelLine = frontmatter[1].match(/^model:[ \t]*(.*?)[ \t]*$/m);
+    if (!modelLine) {
+      continue;
+    }
+
+    const model = modelLine[1].replace(/^(['"])(.*)\1$/, '$2');
+    if (model.length > 0) {
+      defaults[id] = model;
+    }
+  }
+
+  return defaults;
+}
+
 // Parse command line arguments
 const args = process.argv.slice(2);
 
@@ -343,6 +388,7 @@ const {
 module.exports = {
   parseArgs,
   resolveHarnessPath,
+  readDefaultModels,
   AGENT_CATALOG,
   buildAgentSelectChoices,
   buildAgentSelectPromptQuestion,
