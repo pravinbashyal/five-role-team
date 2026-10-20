@@ -16,7 +16,7 @@ const src = __dirname;
 process.chdir(work);
 
 const { main } = require(path.join(src, 'install.js'));
-const { copyInstall, buildInstallSet } = require(path.join(src, 'install-files.js'));
+const { copyInstall, buildInstallSet, linkInstall } = require(path.join(src, 'install-files.js'));
 
 let failed = 0;
 function assert(c, m) { if (!c) { console.error('FAIL:', m); failed += 1; } else console.log('OK:', m); }
@@ -96,10 +96,13 @@ function listFiles(dir, rel = '') {
   assert(/^Copy installation failed: /.test(msg), 'copyInstall: fs failure wrapped');
 
   // Real CLI run in temp cwd with temp HOME
-  const p = spawnSync('node', [path.join(src, 'install.js'), '--local', '--harness', 'claude-code', '--agents', 'supervisor'], { encoding: 'utf8', cwd: work });
+  const p = spawnSync('node', [path.join(src, 'install.js'), '--local', '--harness', 'claude-code', '--agents', 'supervisor', '--force'], { encoding: 'utf8', cwd: work }); // --force: earlier runs already installed here (5.9)
   assert(p.status === 0 && fs.existsSync(path.join(t, 'agents', 'supervisor.md')), 'CLI: copy install exit 0');
   const q = spawnSync('node', [path.join(src, 'install.js'), '--local', '--harness', 'claude-code', '--agents', 'supervisor', '--link'], { encoding: 'utf8', cwd: work });
-  assert(q.status === 1 && /already exists/.test(q.stderr), 'CLI --link onto existing target: exit 1');
+  // 5.9: without --force and non-TTY stdin the overwrite is declined (exit 0, nothing changed); linkInstall's own safety net still errors
+  assert(q.status === 0 && /cancelled/i.test(q.stdout) && fs.lstatSync(t).isDirectory(), 'CLI --link onto existing target: declined, unchanged');
+  let le = ''; try { linkInstall(src, t); } catch (e) { le = e.message; }
+  assert(/already exists/.test(le), 'linkInstall onto existing target: already exists error');
 
   assert(!fs.existsSync(path.join(fakeHome, '.claude')), 'fake home .claude untouched by local/custom installs');
   process.exit(failed ? 1 : 0);

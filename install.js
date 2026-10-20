@@ -342,6 +342,39 @@ CONFIGURATION:
 }
 
 /**
+ * Warn about an existing installation and ask whether to overwrite it.
+ * Decline, cancel (Ctrl-C), a missing answer, or a non-interactive stdin (when
+ * no promptsImpl is injected) all count as "no".
+ *
+ * @param {{kind: string, path: string, linkTarget?: string}} existing - From detectExistingInstall
+ * @param {object} [options]
+ * @param {object} [options.promptsImpl] - Injectable prompts module for tests
+ * @param {function} [options.log] - Logger for the warning (default console.log)
+ * @returns {Promise<boolean>} true only on explicit confirmation
+ */
+async function confirmOverwrite(existing, options = {}) {
+  const log = options.log || console.log;
+  const what = existing.kind === 'directory' ? 'directory'
+    : existing.kind === 'file' ? 'file'
+    : existing.kind === 'dangling-symlink' ? 'dangling symlink -> ' + existing.linkTarget
+    : 'symlink -> ' + existing.linkTarget;
+  log('Warning: five-role-team is already installed at ' + existing.path + ' (' + what + ').');
+  log('Continuing will remove it and install again (the installed copy or link only; a symlink source is never deleted). Use --force to skip this prompt.');
+  if (!options.promptsImpl && !(process.stdin && process.stdin.isTTY)) {
+    log('Non-interactive input: cannot confirm overwrite.');
+    return false;
+  }
+  const promptsImpl = options.promptsImpl || prompts;
+  const response = await promptsImpl({
+    type: 'confirm',
+    name: 'overwrite',
+    message: 'Overwrite existing installation at ' + existing.path + '?',
+    initial: false
+  }, { onCancel: () => true });
+  return !!(response && response.overwrite === true);
+}
+
+/**
  * Main installation logic (currently: argument validation, agent selection and
  * model configuration; file installation is added by later tasks).
  *
@@ -453,6 +486,15 @@ async function main(argv = args, options = {}) {
   if (parsed.uninstall) return result;
   try {
     const resolved = resolveHarnessPath(parsed.harness, parsed.global);
+    const existing = detectExistingInstall(resolved.primary);
+    if (existing) {
+      if (!parsed.force) {
+        const ok = await confirmOverwrite(existing, { ...promptsOption, log });
+        if (!ok) return cancel();
+      }
+      removeExistingInstall(resolved.primary, { sourceDir, expected: resolved.primary });
+      log('Removed existing installation at ' + existing.path);
+    }
     ensureInstallDirectories(resolved);
     if (parsed.link) {
       const linked = linkInstall(sourceDir, resolved.primary);
@@ -481,7 +523,7 @@ const {
   promptAgentSelection,
   resolveSelectedAgents,
 } = require('./select-agents');
-const { ensureInstallDirectories, buildInstallSet, copyInstall, linkInstall, linkSecondary } = require('./install-files');
+const { ensureInstallDirectories, buildInstallSet, copyInstall, linkInstall, linkSecondary, detectExistingInstall, removeExistingInstall } = require('./install-files');
 const {
   validateModel,
   expandModelName,
@@ -495,6 +537,7 @@ module.exports = {
   parseArgs,
   resolveHarnessPath,
   readDefaultModels,
+  confirmOverwrite,
   AGENT_CATALOG,
   buildAgentSelectChoices,
   buildAgentSelectPromptQuestion,

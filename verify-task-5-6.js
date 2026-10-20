@@ -55,8 +55,9 @@ async function run(argv) {
   assert(/symlink mode/i.test(x.out) && x.out.includes('->'), 'output notes whole-dir link and shows link path');
 
   // existing target errors cleanly, nothing changed
-  x = await run(['--local', '--harness', 'claude-code', '--agents', 'worker', '--link']);
-  assert(x.r.exitCode !== 0 && /^Error: .*already exists/m.test(x.err), 'existing symlink target: Error: ... already exists');
+  // 5.9: the CLI now routes this through the overwrite prompt; the linkInstall safety net is checked directly
+  let le = null; try { linkInstall(src, t); } catch (e) { le = e; }
+  assert(le && /already exists/.test(le.message), 'existing symlink target: Error: ... already exists');
   assert(fs.lstatSync(t).isSymbolicLink() && fs.realpathSync(t) === fs.realpathSync(src), 'existing link untouched');
 
   // existing real directory, file and dangling symlink

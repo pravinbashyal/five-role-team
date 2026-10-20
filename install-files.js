@@ -414,7 +414,84 @@ function linkSecondary(primary, secondary) {
   return { target, source };
 }
 
+/**
+ * Describe what exists at `target` without following symlinks.
+ *
+ * @param {string} target - Path to inspect
+ * @returns {{kind: 'directory'|'file'|'symlink'|'dangling-symlink', path: string, linkTarget?: string}|null}
+ *   null when nothing exists at the path
+ */
+function detectExistingInstall(target) {
+  if (typeof target !== 'string' || target.trim().length === 0) {
+    throw new Error('Installation target directory is required');
+  }
+  const abs = path.resolve(target);
+  const st = fs.lstatSync(abs, { throwIfNoEntry: false });
+  if (!st) return null;
+  if (st.isSymbolicLink()) {
+    const linkTarget = fs.readlinkSync(abs);
+    const dangling = !fs.existsSync(abs);
+    return { kind: dangling ? 'dangling-symlink' : 'symlink', path: abs, linkTarget };
+  }
+  return { kind: st.isDirectory() ? 'directory' : 'file', path: abs };
+}
+
+/**
+ * Remove an existing five-role-team installation at `target` (used before an
+ * overwrite). Removes ONLY that exact path: a symlink is unlinked (never
+ * followed, so its source is untouched); a directory is removed recursively;
+ * a plain file is unlinked. Returns false when nothing exists.
+ *
+ * Refuses (throws, nothing removed) when:
+ * - the target is not named `five-role-team`
+ * - `expected` is given and the target is not exactly that path
+ * - the target equals, or contains, the plugin source directory
+ *   (checked lexically and via realpath)
+ *
+ * @param {string} target - Installed plugin path
+ * @param {object} [opts]
+ * @param {string} [opts.sourceDir] - Plugin source root to protect
+ * @param {string} [opts.expected] - Path produced by resolveHarnessPath
+ * @returns {boolean} true if something was removed
+ */
+function removeExistingInstall(target, opts = {}) {
+  if (typeof target !== 'string' || target.trim().length === 0) {
+    throw new Error('Installation target directory is required');
+  }
+  const abs = path.resolve(target);
+  if (path.basename(abs) !== 'five-role-team') {
+    throw new Error(`Refusing to remove ${abs}: not a five-role-team installation path`);
+  }
+  if (opts.expected !== undefined && path.resolve(opts.expected) !== abs) {
+    throw new Error(`Refusing to remove ${abs}: does not match the resolved installation path`);
+  }
+  const existing = fs.lstatSync(abs, { throwIfNoEntry: false });
+  if (!existing) return false;
+  if (opts.sourceDir) {
+    const src = path.resolve(opts.sourceDir);
+    const contains = (outer, inner) => inner === outer || inner.startsWith(outer + path.sep);
+    let blocked = contains(abs, src);
+    if (!blocked && !existing.isSymbolicLink()) {
+      try {
+        blocked = contains(fs.realpathSync(abs), fs.realpathSync(src));
+      } catch (err) { /* source missing: lexical check already done */ }
+    }
+    if (blocked) {
+      throw new Error(`Refusing to remove ${abs}: it is, or contains, the plugin source directory`);
+    }
+  }
+  try {
+    if (existing.isDirectory()) fs.rmSync(abs, { recursive: true });
+    else fs.unlinkSync(abs);
+  } catch (err) {
+    throw new Error(`Failed to remove existing installation ${abs}: ${err.message}`);
+  }
+  return true;
+}
+
 module.exports = {
+  detectExistingInstall,
+  removeExistingInstall,
   linkSecondary,
   copyInstall,
   linkInstall,

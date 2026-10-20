@@ -19,7 +19,8 @@ function assert(c, m) { if (!c) { console.error('FAIL:', m); failed += 1; } else
 
 async function run(argv, promptsImpl) {
   const out = []; const err = [];
-  const r = await main(argv, { promptsImpl, log: (m) => out.push(m), error: (m) => err.push(m) });
+  const r = await main([...argv, '--force'], { // --force: repeated installs share one home (5.9 adds overwrite prompt)
+    promptsImpl, log: (m) => out.push(m), error: (m) => err.push(m) });
   return { r, out: out.join('\n'), err: err.join('\n') };
 }
 

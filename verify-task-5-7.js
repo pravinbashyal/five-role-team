@@ -87,8 +87,9 @@ const lst = (p) => fs.lstatSync(p, { throwIfNoEntry: false });
   }
 
   // re-run: secondary already pointing at primary is accepted, left as-is
-  x = await run(['--global', '--harness', 'pi', '--agents', 'worker', '--link'], 'link');
-  assert(x.r.exitCode !== 0 && /already exists/.test(x.err) && !/secondary/i.test(x.err), 're-run --link: primary exists error (primary check first)');
+  // 5.9: with --force the existing primary is replaced and the correct secondary is tolerated
+  x = await run(['--global', '--harness', 'pi', '--agents', 'worker', '--link', '--force'], 'link');
+  assert(x.r.exitCode === 0 && lst(path.join(x.home, '.pi', 'agent', 'skills', 'five-role-team')).isSymbolicLink(), 're-run --link --force: reinstalled, secondary still valid');
   const s2 = path.join(tmpRoot, 'copy', 'home', '.pi', 'agent', 'skills', 'five-role-team');
   const r2 = linkSecondary(path.join(tmpRoot, 'copy', 'home', '.claude', 'skills', 'five-role-team'), s2);
   assert(r2 && r2.existed && lst(s2).isSymbolicLink(), 'secondary already linking to primary: no-op success');
