@@ -214,8 +214,56 @@ function collectAgents(root, rel, selected, entries, addParent) {
   for (const n of files) entries.push({ path: `${rel}/${n}`, type: 'file' });
 }
 
+/**
+ * Format a model string as a YAML scalar. Plain when it is unambiguous
+ * (e.g. `opus`, `anthropic/claude-opus-4-5-20251101`, `qwen3.5:4b-mlx`),
+ * double-quoted (JSON-escaped, which is valid YAML) otherwise.
+ */
+function formatYamlScalar(value) {
+  const plain =
+    /^[A-Za-z0-9][A-Za-z0-9_.\/@+-]*(:[A-Za-z0-9_.\/@+-]+)*$/.test(value) &&
+    !/^(true|false|yes|no|on|off|null|y|n)$/i.test(value) &&
+    !/^[0-9][0-9_.eE+-]*$/.test(value) &&
+    !/^0[xXoObB]/.test(value);
+  return plain ? value : JSON.stringify(value);
+}
+
+/**
+ * Return agent file content with its frontmatter `model:` field set to `model`.
+ * Pure string transform: everything else (other keys, body, line endings) is
+ * preserved byte-for-byte. If the frontmatter has no `model:` line, one is
+ * appended at the end of the frontmatter using the file's line ending.
+ *
+ * @param {string} content - Full agent file text
+ * @param {string} model - Configured model
+ * @returns {string} Modified content
+ * @throws {Error} if model is empty/multi-line or content has no frontmatter block
+ */
+function applyModelToFrontmatter(content, model) {
+  if (typeof content !== 'string') {
+    throw new Error('Agent file content must be a string');
+  }
+  if (typeof model !== 'string' || model.trim().length === 0) {
+    throw new Error('Model must be a non-empty string');
+  }
+  if (/[\r\n]/.test(model)) {
+    throw new Error('Model must be a single line');
+  }
+  const m = content.match(/^(---(\r?\n))([\s\S]*?)(\r?\n---)/);
+  if (!m) {
+    throw new Error('Agent file has no YAML frontmatter block (expected leading --- ... ---)');
+  }
+  const eol = m[2];
+  const line = `model: ${formatYamlScalar(model.trim())}`;
+  const body = m[3];
+  const hasModel = /^model:[^\r\n]*/m.test(body);
+  const newBody = hasModel ? body.replace(/^model:[^\r\n]*/m, () => line) : body + eol + line;
+  return m[1] + newBody + m[4] + content.slice(m[0].length);
+}
+
 module.exports = {
   ensureDirectory,
   ensureInstallDirectories,
   buildInstallSet,
+  applyModelToFrontmatter,
 };
