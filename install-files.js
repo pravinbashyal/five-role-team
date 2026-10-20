@@ -204,7 +204,8 @@ function collectAgents(root, rel, selected, entries, addParent) {
   const files = names.filter(
     (n) => n.endsWith('.md') && selected.has(n.slice(0, -3)) && fs.statSync(path.join(abs, n)).isFile()
   );
-  if (files.length === 0 && !addParent) {
+  if (files.length === 0 && addParent) return; // no pi agent selected: omit pi/ entirely
+  if (files.length === 0) {
     // Keep agents/ itself so the installed layout is stable even when empty.
     entries.push({ path: rel, type: 'dir' });
     return;

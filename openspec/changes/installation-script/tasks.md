@@ -37,7 +37,7 @@
 - [x] 5.5 Implement copy mode installation (default) with all selected agent files and verify files copied with correct content
 - [x] 5.6 Implement symlink mode installation with `--link` flag and verify symlinks point to source directory
 - [x] 5.7 Implement pi dual-location handling (copy/symlink to `~/.claude/skills/` AND symlink from `~/.pi/agent/skills/`) and verify both locations exist for pi harness
-- [ ] 5.8 Implement harness-specific file handling (include `pi/` only for pi harness, so `pi/agents/intern.md` is copied or linked for pi installs and its default model `qwen3.5:4b-mlx` is read from it) and verify pi-specific files excluded for claude-code
+- [x] 5.8 Implement harness-specific file handling (include `pi/` only for pi harness, so `pi/agents/intern.md` is copied or linked for pi installs and its default model `qwen3.5:4b-mlx` is read from it) and verify pi-specific files excluded for claude-code
 - [ ] 5.9 Add existing installation detection and confirmation prompt (skip with `--force`) and verify overwrite warning shows
 - [ ] 5.10 Implement rollback on partial installation failure and verify partial files removed on error
 
