@@ -386,6 +386,7 @@ const {
 const {
   buildModelPromptQuestion,
   promptModelConfiguration,
+  resolveAgentModels,
 } = require('./configure-models');
 
 // Export functions for testing
@@ -400,6 +401,7 @@ module.exports = {
   resolveSelectedAgents,
   buildModelPromptQuestion,
   promptModelConfiguration,
+  resolveAgentModels,
 };
 
 // Run main if not showing help

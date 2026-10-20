@@ -81,8 +81,32 @@ async function promptModelConfiguration(agentIds, defaults = {}, options = {}) {
   return models;
 }
 
+/**
+ * Resolve models non-interactively from parsed --agent-models overrides.
+ * Overrides (expanded) win over source defaults (also expanded, matching the
+ * interactive flow). Overrides for agents that are not selected are ignored;
+ * agents with neither an override nor a default are omitted.
+ *
+ * @param {string[]} agentIds - Selected agent ids
+ * @param {object} defaults - Map of agent id → default model (see readDefaultModels)
+ * @param {object} agentModels - Map of agent id → model from parseArgs().agentModels
+ * @returns {object} Map of agent id → resolved model
+ */
+function resolveAgentModels(agentIds, defaults = {}, agentModels = {}) {
+  const has = (obj, key) => Object.prototype.hasOwnProperty.call(obj, key);
+  const models = {};
+  for (const id of agentIds) {
+    const raw = has(agentModels, id) ? agentModels[id] : defaults[id];
+    if (typeof raw === 'string' && raw.trim().length > 0) {
+      models[id] = expandModelName(raw);
+    }
+  }
+  return models;
+}
+
 module.exports = {
   expandModelName,
+  resolveAgentModels,
   buildModelPromptQuestion,
   promptModelConfiguration,
 };
