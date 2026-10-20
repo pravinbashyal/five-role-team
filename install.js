@@ -458,11 +458,15 @@ async function main(argv = args, options = {}) {
       const linked = linkInstall(sourceDir, resolved.primary);
       log('Note: symlink mode links the whole source directory; agent selection and model configuration are not applied.');
       log('Linked ' + linked.target + ' -> ' + linked.source);
+      const sec = linkSecondary(resolved.primary, resolved.secondary);
+      if (sec) log('Linked ' + sec.target + ' -> ' + sec.source);
       return result;
     }
     const installSet = buildInstallSet(sourceDir, result.selectedAgents, parsed.harness);
     const written = copyInstall(sourceDir, resolved.primary, installSet, result.models);
     log('Installed ' + written.files.length + ' files to ' + written.target);
+    const sec = linkSecondary(resolved.primary, resolved.secondary);
+    if (sec) log('Linked ' + sec.target + ' -> ' + sec.source);
   } catch (err) {
     return fail('Error: ' + err.message);
   }
@@ -477,7 +481,7 @@ const {
   promptAgentSelection,
   resolveSelectedAgents,
 } = require('./select-agents');
-const { ensureInstallDirectories, buildInstallSet, copyInstall, linkInstall } = require('./install-files');
+const { ensureInstallDirectories, buildInstallSet, copyInstall, linkInstall, linkSecondary } = require('./install-files');
 const {
   validateModel,
   expandModelName,

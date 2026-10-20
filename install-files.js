@@ -373,7 +373,48 @@ function linkInstall(sourceDir, targetDir) {
   return { target, source };
 }
 
+/**
+ * Create the pi secondary symlink (~/.pi/agent/skills/five-role-team) pointing
+ * at the primary installed directory (~/.claude/skills/five-role-team).
+ *
+ * - No-op (returns null) when `secondary` is null/empty (non-pi, local pi, custom).
+ * - Never overwrites or removes anything: errors if `secondary` exists in any
+ *   form (file, directory, symlink, dangling symlink).
+ * - The parent of `secondary` must exist (ensureInstallDirectories).
+ *
+ * @param {string} primary - Installed plugin path (copy or symlink)
+ * @param {string|null} secondary - Path of the symlink to create
+ * @returns {{target: string, source: string}|null}
+ * @throws {Error} with a clear message on any failure
+ */
+function linkSecondary(primary, secondary) {
+  if (!secondary) return null;
+  if (typeof primary !== 'string' || primary.trim().length === 0) {
+    throw new Error('Primary installation path is required');
+  }
+  const source = path.resolve(primary);
+  const target = path.resolve(secondary);
+  if (!fs.lstatSync(source, { throwIfNoEntry: false })) {
+    throw new Error(`Cannot create secondary link ${target}: primary install ${source} does not exist`);
+  }
+  const existing = fs.lstatSync(target, { throwIfNoEntry: false });
+  if (existing && existing.isSymbolicLink() &&
+      path.resolve(path.dirname(target), fs.readlinkSync(target)) === source) {
+    return { target, source, existed: true }; // already the desired link; nothing to change
+  }
+  if (existing) {
+    throw new Error(`Cannot create secondary link ${target}: path already exists (remove it first)`);
+  }
+  try {
+    fs.symlinkSync(source, target, 'dir');
+  } catch (err) {
+    throw new Error(`Secondary symlink creation failed: ${err.message}`);
+  }
+  return { target, source };
+}
+
 module.exports = {
+  linkSecondary,
   copyInstall,
   linkInstall,
   ensureDirectory,
