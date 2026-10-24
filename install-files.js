@@ -497,6 +497,49 @@ function uninstallInstall(target, opts = {}) {
 }
 
 /**
+ * Remove the pi secondary symlink (~/.pi/agent/skills/five-role-team) during
+ * uninstall (task 7.2, design Decision 11). The install creates it pointing at
+ * the primary install, so only a symlink that resolves to `primary` is ours.
+ *
+ * - nothing at `secondary` (or no secondary, e.g. claude-code or local pi): null.
+ * - a symlink whose target resolves to `primary`: unlinked, never followed. The
+ *   comparison is textual, so a dangling link (primary already removed) is
+ *   still recognised and removed.
+ * - a real directory or file there, or a symlink to some other location: left
+ *   untouched and reported as `kept` with the reason.
+ *
+ * @param {string} primary - Primary installed plugin path (from resolveHarnessPath)
+ * @param {string|null} secondary - Secondary link path (from resolveHarnessPath)
+ * @returns {{kind: 'symlink', path: string, linkTarget: string}|{kind: 'kept', path: string, reason: string}|null}
+ * @throws {Error} with a clear message if the symlink cannot be removed
+ */
+function uninstallPiSecondary(primary, secondary) {
+  if (!secondary) return null;
+  if (typeof primary !== 'string' || primary.trim().length === 0) {
+    throw new Error('Primary installation path is required');
+  }
+  const abs = path.resolve(secondary);
+  if (path.basename(abs) !== 'five-role-team') {
+    throw new Error(`Refusing to remove ${abs}: not a five-role-team installation path`);
+  }
+  const st = fs.lstatSync(abs, { throwIfNoEntry: false });
+  if (!st) return null;
+  if (!st.isSymbolicLink()) {
+    return { kind: 'kept', path: abs, reason: 'it is not a symlink' };
+  }
+  const linkTarget = fs.readlinkSync(abs);
+  if (path.resolve(path.dirname(abs), linkTarget) !== path.resolve(primary)) {
+    return { kind: 'kept', path: abs, reason: `it links to ${linkTarget}, not to the installed plugin` };
+  }
+  try {
+    fs.unlinkSync(abs);
+  } catch (err) {
+    throw new Error(`Failed to remove symlink ${abs}: ${err.message}`);
+  }
+  return { kind: 'symlink', path: abs, linkTarget };
+}
+
+/**
  * Symlink mode installation: create a single symlink at `targetDir` pointing
  * at the plugin source directory (spec: "a symlink is created at
  * ~/.claude/skills/five-role-team/ pointing to the source directory").
@@ -798,6 +841,7 @@ module.exports = {
   UNINSTALL_CLEANUP_FILES,
   removeUninstallCleanupFiles,
   uninstallInstall,
+  uninstallPiSecondary,
   linkInstall,
   ensureDirectory,
   ensureInstallDirectories,

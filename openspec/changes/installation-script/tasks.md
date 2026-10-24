@@ -49,8 +49,8 @@
 
 ## 7. Uninstallation Logic
 
-- [ ] 7.1 Implement the `uninstall` subcommand (replacing the `--uninstall` flag, including parsing and `--help` text) that detects copy vs symlink installation and verify both types removed correctly, sandboxed HOME/temp folder only
-- [ ] 7.2 Implement pi dual-location cleanup (remove both main location and symlink) and verify both locations cleaned for pi harness (sandboxed only)
+- [x] 7.1 Implement the `uninstall` subcommand (replacing the `--uninstall` flag, including parsing and `--help` text) that detects copy vs symlink installation and verify both types removed correctly, sandboxed HOME/temp folder only
+- [x] 7.2 Implement pi dual-location cleanup (remove both main location and symlink) and verify both locations cleaned for pi harness (sandboxed only)
 - [ ] 7.3 Add safety check that only removes five-role-team directory, not parent skills directory and verify parent preserved after uninstall (sandboxed only)
 - [ ] 7.4 Implement configuration file removal during uninstall and verify `.agent-config.json` is deleted (sandboxed only)
 - [ ] 7.5 Remove the `--uninstall` flag everywhere (parser, `--help` text, `test-parse-args.js`/`test-cli-examples.js`, existing verify scripts) so `uninstall` is only a subcommand, and verify `--uninstall` is rejected as an unknown flag (sandboxed only)

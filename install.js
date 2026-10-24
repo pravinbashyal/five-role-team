@@ -472,17 +472,32 @@ async function main(argv = args, options = {}) {
   if (parsed.uninstall) {
     try {
       const resolved = resolveHarnessPath(parsed.harness, parsed.global);
-      const removed = uninstallInstall(resolved.primary, { sourceDir, expected: resolved.primary });
-      if (removed.kind === 'symlink') {
-        log('Removed symlink ' + removed.path + ' -> ' + removed.linkTarget);
-        log('Source directory ' + removed.linkTarget + ' was left untouched.');
-      } else {
-        removed.cleaned.forEach(file => log('Removed ' + file));
-        log('Removed installation at ' + removed.path);
+      // The primary goes first; its safety refusals throw before anything else is
+      // touched. A missing primary is only an error when no pi secondary symlink
+      // is removed either (a dangling secondary left by a deleted install counts).
+      const primaryPresent = !!fs.lstatSync(resolved.primary, { throwIfNoEntry: false });
+      const removed = primaryPresent
+        ? uninstallInstall(resolved.primary, { sourceDir, expected: resolved.primary })
+        : null;
+      if (removed) {
+        if (removed.kind === 'symlink') {
+          log('Removed symlink ' + removed.path + ' -> ' + removed.linkTarget);
+          log('Source directory ' + removed.linkTarget + ' was left untouched.');
+        } else {
+          removed.cleaned.forEach(file => log('Removed ' + file));
+          log('Removed installation at ' + removed.path);
+        }
       }
-      // Temporary until task 7.2 (pi dual-location cleanup) removes it.
-      if (resolved.secondary && fs.lstatSync(resolved.secondary, { throwIfNoEntry: false })) {
-        log('Note: the pi secondary location ' + resolved.secondary + ' was not removed by this uninstall step.');
+      // pi only (task 7.2): the ~/.pi/agent/skills symlink is removed only when it
+      // is a symlink to the primary. Anything else there is left and reported.
+      const secondary = uninstallPiSecondary(resolved.primary, resolved.secondary);
+      if (secondary && secondary.kind === 'symlink') {
+        log('Removed pi secondary symlink ' + secondary.path + ' -> ' + secondary.linkTarget);
+      } else if (secondary) {
+        log('Warning: left ' + secondary.path + ' in place because ' + secondary.reason + '.');
+      }
+      if (!removed && !(secondary && secondary.kind === 'symlink')) {
+        throw new Error('Nothing to uninstall: no five-role-team installation at ' + path.resolve(resolved.primary));
       }
     } catch (err) {
       return fail('Error: ' + err.message);
@@ -640,7 +655,7 @@ const {
   promptAgentSelection,
   resolveSelectedAgents,
 } = require('./select-agents');
-const { ensureInstallDirectories, buildInstallSet, copyInstall, writeAgentConfigFile, linkInstall, linkSecondary, detectExistingInstall, detectSecondaryConflict, moveAsideExistingInstall, discardBackup, rollbackInstall, uninstallInstall } = require('./install-files');
+const { ensureInstallDirectories, buildInstallSet, copyInstall, writeAgentConfigFile, linkInstall, linkSecondary, detectExistingInstall, detectSecondaryConflict, moveAsideExistingInstall, discardBackup, rollbackInstall, uninstallInstall, uninstallPiSecondary } = require('./install-files');
 const { buildAgentConfig } = require('./agent-config');
 const {
   validateModel,
