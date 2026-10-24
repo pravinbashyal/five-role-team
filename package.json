@@ -1,8 +1,27 @@
 {
-  "name": "five-role-team",
+  "name": "@pravinbashyal/five-role-team",
   "version": "1.0.0",
   "description": "Five-role team plugin for AI assistant harnesses with customizable agent installation",
   "main": "install.js",
+  "bin": {
+    "five-role-team": "install.js"
+  },
+  "files": [
+    "install.js",
+    "install-files.js",
+    "select-agents.js",
+    "configure-models.js",
+    "agent-config.js",
+    "SKILL.md",
+    "agents",
+    "commands",
+    "conventions",
+    ".claude-plugin",
+    "pi"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1"
   },
