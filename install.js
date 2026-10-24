@@ -56,16 +56,30 @@ function parseArgs(argv) {
     link: false,
     force: false,
     uninstall: false,
+    init: false,
+    installAlias: false,
+    command: null,
     agents: null,
     agentModels: {},
     errors: []
   };
 
-  // `uninstall` is a subcommand, so it is only recognised as the first argument
-  // (like `npm uninstall`). The remaining arguments are parsed as usual.
+  // `init`, `install` (alias) and `uninstall` are optional subcommands, so they
+  // are only recognised as the first argument. `init` installs into the current
+  // project directory (local scope by default, `--global` overrides); `install`
+  // is an alias. The bare form (no subcommand) still installs as before.
   let tokens = argv;
-  if (argv[0] === 'uninstall') {
+  if (argv[0] === 'init') {
+    parsed.init = true;
+    parsed.command = 'init';
+    tokens = argv.slice(1);
+  } else if (argv[0] === 'install') {
+    parsed.installAlias = true;
+    parsed.command = 'install';
+    tokens = argv.slice(1);
+  } else if (argv[0] === 'uninstall') {
     parsed.uninstall = true;
+    parsed.command = 'uninstall';
     tokens = argv.slice(1);
   }
 
@@ -150,6 +164,12 @@ function parseArgs(argv) {
       // has no other positional arguments, so it must not silently fall through to an install.
       parsed.errors.push(`Unknown argument: ${arg} (run "node install.js --help" for usage)`);
     }
+  }
+
+  // `init` installs into the current project directory by default (local scope),
+  // so when neither scope flag is given it defaults to local (task 2.1).
+  if (parsed.init && !parsed.global && !parsed.local && !argv.includes('--help') && !argv.includes('-h')) {
+    parsed.local = true;
   }
 
   // Validate that exactly one of --global or --local is provided (task 2.2)
@@ -308,7 +328,10 @@ function showUsage() {
 Five-Role Team Plugin Installer
 
 USAGE:
-  node install.js [OPTIONS]
+  node install.js [init|install] [OPTIONS]
+  node install.js init [OPTIONS]        Install into current project (local scope by default; --global overrides)
+  node install.js install [OPTIONS]     Alias for init
+  node install.js [OPTIONS]            Bare form (still installs; scope and harness as given)
   node install.js uninstall --global|--local --harness <name|path>
 
 OPTIONS:

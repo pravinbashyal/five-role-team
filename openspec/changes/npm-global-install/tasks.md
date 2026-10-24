@@ -7,7 +7,7 @@
 
 ## 2. CLI
 
-- [ ] 2.1 Add `init` (local scope by default, `--global` overrides) and `install` alias as optional first arguments in the arg parser and `--help` text; verify `init`, `install` and bare forms parse as specified and `uninstall` is unchanged
+- [x] 2.1 Add `init` (local scope by default, `--global` overrides) and `install` alias as optional first arguments in the arg parser and `--help` text; verify `init`, `install` and bare forms parse as specified and `uninstall` is unchanged
 - [ ] 2.2 Prompt for missing scope (not for `init`) and harness on a TTY (select global/local; select pi/claude-code/custom path), exit 1 with a hint without a TTY, exit cleanly on cancel; verify with flag-driven, partial-flag, non-TTY and cancel cases (sandboxed)
 
 ## 3. Documentation
