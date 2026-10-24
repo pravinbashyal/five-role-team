@@ -461,11 +461,12 @@ function removeUninstallCleanupFiles(targetDir) {
  * - any other entry (e.g. a regular file): refused, nothing is removed.
  *
  * Safety checks come from checkRemovable: the path must be named
- * `five-role-team`, must equal `opts.expected` when given, and must neither be
- * nor contain `opts.sourceDir`. The parent directory is never removed here.
+ * `five-role-team`, must equal `opts.expected` when given, must neither be
+ * nor contain `opts.sourceDir` (required), and must neither be nor contain any
+ * `opts.protect` skills directory. The parent directory is never removed here.
  *
  * @param {string} target - Primary installed plugin path (from resolveHarnessPath)
- * @param {object} [opts] - Same as removeExistingInstall (`sourceDir`, `expected`)
+ * @param {object} opts - `sourceDir` (required), `expected`, `protect` (see checkRemovable)
  * @returns {{kind: 'symlink'|'directory', path: string, linkTarget?: string, cleaned: string[]}}
  * @throws {Error} with a clear message; nothing is removed on a refusal
  */
@@ -696,8 +697,22 @@ function removeExistingInstall(target, opts = {}) {
   return true;
 }
 
-/** Shared safety checks for removing / moving aside an installation path. */
-function checkRemovable(target, opts) {
+/**
+ * Shared safety checks for removing / moving aside an installation path.
+ * Throws (nothing is touched) unless every check passes:
+ * - the basename of the resolved path is exactly `five-role-team`, so a parent
+ *   skills directory (or `/`, `.`, any custom `.../skills`) can never be the target.
+ *   Trailing slashes and `..` segments are normalised by path.resolve first.
+ * - `opts.expected`, when given, resolves to exactly the same path.
+ * - `opts.sourceDir` is required. The target must neither be nor contain the
+ *   source checkout (lexically, and via realpath for a non-symlink target).
+ * - the target must neither be nor contain any path in `opts.protect` (skills
+ *   roots such as the harness base or ~/.claude/skills), lexically or via
+ *   realpath, so removing it can never take a skills directory with it.
+ *
+ * @returns {{abs: string, existing: fs.Stats}|null} null when nothing exists at the path
+ */
+function checkRemovable(target, opts = {}) {
   if (typeof target !== 'string' || target.trim().length === 0) {
     throw new Error('Installation target directory is required');
   }
@@ -708,19 +723,39 @@ function checkRemovable(target, opts) {
   if (opts.expected !== undefined && path.resolve(opts.expected) !== abs) {
     throw new Error(`Refusing to remove ${abs}: does not match the resolved installation path`);
   }
+  if (typeof opts.sourceDir !== 'string' || opts.sourceDir.trim().length === 0) {
+    throw new Error(`Refusing to remove ${abs}: the plugin source directory is required for the safety check`);
+  }
   const existing = fs.lstatSync(abs, { throwIfNoEntry: false });
   if (!existing) return null;
-  if (opts.sourceDir) {
-    const src = path.resolve(opts.sourceDir);
-    const contains = (outer, inner) => inner === outer || inner.startsWith(outer + path.sep);
-    let blocked = contains(abs, src);
-    if (!blocked && !existing.isSymbolicLink()) {
-      try {
-        blocked = contains(fs.realpathSync(abs), fs.realpathSync(src));
-      } catch (err) { /* source missing: lexical check already done */ }
-    }
-    if (blocked) {
-      throw new Error(`Refusing to remove ${abs}: it is, or contains, the plugin source directory`);
+
+  const contains = (outer, inner) => inner === outer || inner.startsWith(outer + path.sep);
+  const realOrNull = (p) => {
+    try { return fs.realpathSync(p); } catch (err) { return null; }
+  };
+
+  const src = path.resolve(opts.sourceDir);
+  let blocked = contains(abs, src);
+  if (!blocked && !existing.isSymbolicLink()) {
+    const realSrc = realOrNull(src);
+    const realAbs = realOrNull(abs);
+    blocked = !!(realSrc && realAbs && contains(realAbs, realSrc));
+  }
+  if (blocked) {
+    throw new Error(`Refusing to remove ${abs}: it is, or contains, the plugin source directory`);
+  }
+
+  // Where the entry itself sits, with its parents resolved. The entry is never
+  // followed, so this is the location that actually gets removed.
+  const location = path.join(realOrNull(path.dirname(abs)) || path.dirname(abs), path.basename(abs));
+  const protectedRoots = Array.isArray(opts.protect) ? opts.protect : [];
+  for (const root of protectedRoots) {
+    const lexical = path.resolve(root);
+    const real = realOrNull(lexical) || lexical;
+    for (const p of [lexical, real]) {
+      if (contains(abs, p) || contains(location, p)) {
+        throw new Error(`Refusing to remove ${abs}: it is, or contains, the skills directory ${lexical}`);
+      }
     }
   }
   return { abs, existing };

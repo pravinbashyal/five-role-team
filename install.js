@@ -476,8 +476,15 @@ async function main(argv = args, options = {}) {
       // touched. A missing primary is only an error when no pi secondary symlink
       // is removed either (a dangling secondary left by a deleted install counts).
       const primaryPresent = !!fs.lstatSync(resolved.primary, { throwIfNoEntry: false });
+      // Skills roots the uninstall must never remove or contain (task 7.3): the
+      // harness base directory and the default global claude-code and pi skills dirs.
+      const protect = [
+        resolved.base,
+        path.join(os.homedir(), '.claude', 'skills'),
+        path.join(os.homedir(), '.pi', 'agent', 'skills'),
+      ];
       const removed = primaryPresent
-        ? uninstallInstall(resolved.primary, { sourceDir, expected: resolved.primary })
+        ? uninstallInstall(resolved.primary, { sourceDir, expected: resolved.primary, protect })
         : null;
       if (removed) {
         if (removed.kind === 'symlink') {
