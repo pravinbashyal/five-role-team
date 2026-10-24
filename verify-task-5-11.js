@@ -174,7 +174,12 @@ function brokenSource(name) {
   const hasked = [];
   x = await run(PI, async (q) => { hasked.push(q); return { overwrite: true }; });
   assert(hasked.length === 1 && hasked[0].message.includes(e.primary) && !hasked[0].message.includes(e.secondary), 'reinstall: single prompt mentions only the primary');
-  assert(!/secondary/i.test(x.out.replace(/Linked .*/g, '')) && x.r.exitCode === 0 && valid(e) && noBackups(e), 'reinstall with correct secondary: no secondary warning, no backup, both valid');
+  // Success output legitimately names the secondary in progress and summary lines (8.1, 8.2).
+  // Only those expected success lines are excluded; any other line mentioning "secondary"
+  // (warning, removal, rollback wording) still fails the check.
+  const expectedSecondaryLine = /^(Pi secondary location: |Creating pi secondary symlink |Linked |  Pi secondary symlink: )/;
+  const secondaryWarnings = x.out.split('\n').filter(l => /secondary/i.test(l) && !expectedSecondaryLine.test(l));
+  assert(secondaryWarnings.length === 0 && x.r.exitCode === 0 && valid(e) && noBackups(e), 'reinstall with correct secondary: no secondary warning, no backup, both valid' + (secondaryWarnings.length ? ' (unexpected: ' + secondaryWarnings.join(' | ') + ')' : ''));
   x = await run([...PI, '--force'], noPrompt);
   assert(x.r.exitCode === 0 && valid(e) && !/Removed existing secondary/.test(x.out), '--force reinstall: correct secondary left alone');
   // correct secondary, primary absent (dangling): no prompt at all
