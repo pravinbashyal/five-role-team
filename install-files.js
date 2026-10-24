@@ -422,6 +422,8 @@ function removeCleanupFile(dir, name) {
  * Remove every file in UNINSTALL_CLEANUP_FILES from an installed plugin
  * directory. Only those names are touched; nothing else in the directory is
  * removed here. A missing directory has nothing to clean and returns [].
+ * A symlinked target (a --link install) is never followed: it returns [] and
+ * nothing in the link target is touched.
  *
  * @param {string} targetDir - Installed plugin directory
  * @returns {string[]} Absolute paths of the files that were removed
@@ -434,6 +436,7 @@ function removeUninstallCleanupFiles(targetDir) {
   const dir = path.resolve(targetDir);
   const st = fs.lstatSync(dir, { throwIfNoEntry: false });
   if (!st) return [];
+  if (st.isSymbolicLink()) return []; // --link install: never follow into the source tree
   if (!st.isDirectory()) {
     throw new Error(`Cannot clean up ${dir}: not a directory`);
   }

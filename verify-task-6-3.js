@@ -114,6 +114,27 @@ function throwsWith(fn, re) {
       'undefined target directory is rejected');
   }
 
+  // 7b. A symlinked target (--link install) is never followed: returns [] and
+  //     the link target's contents, including a config file, are untouched.
+  {
+    const { work } = env('symlink-target');
+    const source = path.join(work, 'source-checkout');
+    fs.mkdirSync(source, { recursive: true });
+    fs.writeFileSync(path.join(source, 'SKILL.md'), 'skill\n');
+    const cfgInSource = path.join(source, CFG);
+    fs.writeFileSync(cfgInSource, '{"keep":true}\n');
+    const link = path.join(work, 'five-role-team');
+    fs.symlinkSync(source, link, 'dir');
+    let removed;
+    let threw = false;
+    try { removed = removeUninstallCleanupFiles(link); } catch (err) { threw = true; }
+    assert(!threw && Array.isArray(removed) && removed.length === 0, 'symlinked target returns []');
+    assert(lst(link) && lst(link).isSymbolicLink(), 'symlinked target is left in place');
+    assert(fs.existsSync(cfgInSource) && fs.readFileSync(cfgInSource, 'utf8') === '{"keep":true}\n',
+      'link target config file is not removed or modified');
+    assert(fs.existsSync(path.join(source, 'SKILL.md')), 'link target contents are untouched');
+  }
+
   // 8. A regular file at the target path is not a plugin directory.
   {
     const { work } = env('file-target');
