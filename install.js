@@ -144,6 +144,11 @@ function parseArgs(argv) {
       // removed or mistyped flag (e.g. the old --uninstall) cannot silently run
       // an install with the flag dropped.
       parsed.errors.push(`Unknown flag: ${arg} (run "node install.js --help" for usage)`);
+    } else {
+      // Any bare token that is not a recognised flag, a consumed flag value, or the
+      // leading `uninstall` (e.g. a typo such as `uninstal`) is an error. The grammar
+      // has no other positional arguments, so it must not silently fall through to an install.
+      parsed.errors.push(`Unknown argument: ${arg} (run "node install.js --help" for usage)`);
     }
   }
 
@@ -322,7 +327,9 @@ OPTIONS:
                           A copy install is deleted, including .agent-config.json.
                           A --link install only loses its symlink; the source is never touched.
                           Exits 1 with "Nothing to uninstall" when nothing is installed.
-                          Uses --global|--local and --harness; other flags are ignored.
+                          Uses --global|--local and --harness. Other recognised options
+                          (--link, --force, --agents, --agent-models) are accepted but have
+                          no effect. Unknown flags or arguments are an error (exit 1).
 
   INTERACTIVE MODE (default):
   - Prompts for agent selection (architect, designer, worker, reviewer, supervisor, intern)

@@ -138,6 +138,30 @@ for (const c of REJECT_CASES) {
   assert(JSON.stringify(snapshot(work)) === JSON.stringify(before.work), `reject [${c.name}]: work tree unchanged`);
 }
 
+// A2. A mistyped or bare positional token is rejected as an unknown argument (exit 1)
+//     and removes nothing. Without this, `uninstal` would silently run an install.
+const BARE_CASES = [
+  { name: 'mistyped uninstal', args: ['uninstal', '--global', '--harness', 'claude-code'] },
+  { name: 'bare remove', args: ['remove', '--global', '--harness', 'claude-code'] },
+  { name: 'stray trailing positional', args: ['uninstall', '--global', '--harness', 'claude-code', 'extra'] },
+];
+for (const c of BARE_CASES) {
+  const { home, work } = resetScenario(`bare-${c.name.replace(/[^a-z0-9]+/gi, '-')}`);
+  const inst = install(home, work, '--global');
+  const primary = primaryFor('--global', home, work);
+  assert(inst.status === 0 && lst(primary) && lst(primary).isDirectory(),
+    `bare [${c.name}]: setup copy install exists`);
+  const before = { home: snapshot(home), work: snapshot(work) };
+
+  const r = cli(c.args, home, work);
+  assert(r.status === 1, `bare [${c.name}]: exit code 1 (got ${r.status})`);
+  assert(/Unknown argument: /.test(r.err), `bare [${c.name}]: reported as unknown argument`);
+  assert(lst(primary) && lst(primary).isDirectory(), `bare [${c.name}]: existing install still exists`);
+  assert(fs.existsSync(path.join(primary, CFG)), `bare [${c.name}]: install config still exists`);
+  assert(JSON.stringify(snapshot(home)) === JSON.stringify(before.home), `bare [${c.name}]: HOME tree unchanged`);
+  assert(JSON.stringify(snapshot(work)) === JSON.stringify(before.work), `bare [${c.name}]: work tree unchanged`);
+}
+
 // B. The `uninstall` subcommand still works for global and local copy installs.
 {
   const { home, work } = resetScenario('subcommand-global');
