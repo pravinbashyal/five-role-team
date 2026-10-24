@@ -48,7 +48,7 @@ Then point a project's own `CLAUDE.md` at **`/five-role-team:apply`**, not just 
 
 ## Installation
 
-`install.js` copies (or links) the plugin into a harness's skills directory and lets you choose which agents to include and which model each one uses. Run it from a five-role-team checkout: the script refuses to run from any directory that does not contain `.claude-plugin/plugin.json`.
+`install.js` copies (or links) the plugin into a harness's skills directory and lets you choose which agents to include and which model each one uses. Run it from a five-role-team checkout: the script refuses to run from any directory that does not contain `.claude-plugin/plugin.json`. It is an alternative to the `git clone` and marketplace installs under "Install" above, not a step to combine with them.
 
 ### Prerequisites
 
@@ -86,6 +86,32 @@ Symlink install for development. In `--link` mode the install points at the chec
 
 ```bash
 node install.js --global --harness claude-code --link --agents architect,worker,reviewer,supervisor
+```
+
+### Common scenarios
+
+Team without a designer: list only the agents you want. `designer` is not installed and is left out of `.agent-config.json`. Without `--agent-models`, each agent keeps its default model.
+
+```bash
+node install.js --global --harness claude-code --agents architect,worker,reviewer,supervisor
+```
+
+Custom models: `--agent-models` replaces the model of each named agent, and the other selected agents keep their defaults. Short names are expanded to full model paths.
+
+```bash
+node install.js --global --harness claude-code --agents architect,worker,reviewer --agent-models "worker=sonnet,reviewer=opus"
+```
+
+A name containing `/` is used as-is, so a full model path works too:
+
+```bash
+node install.js --global --harness claude-code --agents architect,worker,reviewer --agent-models "architect=anthropic/claude-opus-4-5-20251101"
+```
+
+Development symlink install: `--link` points the harness at the checkout, so edits there are picked up without reinstalling. In `--link` mode the agent and model choices are not applied: the whole source directory is linked and no `.agent-config.json` is written. The `--agents` value below only stops the command from asking agent and model questions, and it has no effect on the link.
+
+```bash
+node install.js --global --harness claude-code --link --agents worker
 ```
 
 ### Uninstall
