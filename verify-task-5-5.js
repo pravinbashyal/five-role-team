@@ -54,7 +54,9 @@ function listFiles(dir, rel = '') {
   }
   const set = buildInstallSet(src, ['worker', 'reviewer'], 'claude-code');
   const expected = set.filter((e) => e.type === 'file').map((e) => e.path).sort();
-  assert(JSON.stringify(listFiles(t)) === JSON.stringify(expected), 'installed file list equals install set');
+  // Task 6.2: the copy also carries .agent-config.json (written after the copy).
+  const expectedWithConfig = expected.concat(['.agent-config.json']).sort();
+  assert(JSON.stringify(listFiles(t).sort()) === JSON.stringify(expectedWithConfig), 'installed file list equals install set plus .agent-config.json');
   for (const f of expected.filter((p) => !/^agents\//.test(p))) {
     if (Buffer.compare(fs.readFileSync(path.join(t, f)), fs.readFileSync(path.join(src, f))) !== 0) assert(false, 'not byte-identical: ' + f);
   }

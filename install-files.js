@@ -344,6 +344,52 @@ function copyInstall(sourceDir, targetDir, installSet, models) {
   return written;
 }
 
+/** File name of the per-install configuration (design.md Decision 8). */
+const AGENT_CONFIG_FILE = '.agent-config.json';
+
+/**
+ * Write the configuration file (`.agent-config.json`) into an installed plugin
+ * directory. The file is created exclusively (`wx`): it is never silently
+ * overwritten, so a stale file left in the target is reported as an error.
+ *
+ * For pi global installs the secondary symlink points at this directory, so
+ * the same file is visible at ~/.pi/agent/skills/five-role-team/ without a
+ * second write.
+ *
+ * @param {string} targetDir - Installed plugin directory (copy mode; must exist)
+ * @param {object} config - Structure from agent-config.js buildAgentConfig
+ * @returns {{path: string}} Absolute path of the written file
+ * @throws {Error} with a clear message on any failure
+ */
+function writeAgentConfigFile(targetDir, config) {
+  if (typeof targetDir !== 'string' || targetDir.trim().length === 0) {
+    throw new Error('Installation target directory is required');
+  }
+  if (config === null || typeof config !== 'object') {
+    throw new Error('Agent config must be an object');
+  }
+  const dir = path.resolve(targetDir);
+  const file = path.join(dir, AGENT_CONFIG_FILE);
+  let st;
+  try {
+    st = fs.statSync(dir);
+  } catch (err) {
+    throw new Error(`Cannot write configuration file: ${dir} does not exist`);
+  }
+  if (!st.isDirectory()) {
+    throw new Error(`Cannot write configuration file: ${dir} is not a directory`);
+  }
+  try {
+    fs.writeFileSync(file, JSON.stringify(config, null, 2) + '\n', { flag: 'wx' });
+  } catch (err) {
+    if (err.code === 'EEXIST') {
+      throw new Error(`Cannot write configuration file: ${file} already exists`);
+    }
+    throw new Error(`Cannot write configuration file ${file}: ${err.message}`);
+  }
+  return { path: file };
+}
+
 /**
  * Symlink mode installation: create a single symlink at `targetDir` pointing
  * at the plugin source directory (spec: "a symlink is created at
@@ -642,6 +688,7 @@ module.exports = {
   rollbackInstall,
   linkSecondary,
   copyInstall,
+  writeAgentConfigFile,
   linkInstall,
   ensureDirectory,
   ensureInstallDirectories,

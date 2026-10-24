@@ -535,6 +535,7 @@ async function main(argv = args, options = {}) {
       tx.primary = resolved.primary; // absent here (moved aside / never existed)
       const linked = linkInstall(sourceDir, resolved.primary);
       log('Note: symlink mode links the whole source directory; agent selection and model configuration are not applied.');
+      log('Note: no .agent-config.json is written in symlink mode (it would be written into the source directory).');
       log('Linked ' + linked.target + ' -> ' + linked.source);
       const sec = linkSecondary(resolved.primary, resolved.secondary);
       if (sec) {
@@ -543,9 +544,19 @@ async function main(argv = args, options = {}) {
       }
     } else {
       const installSet = buildInstallSet(sourceDir, result.selectedAgents, parsed.harness);
+      // Build the config before writing anything so invalid input fails early.
+      const agentConfig = buildAgentConfig({
+        agents: result.selectedAgents,
+        models: result.models,
+        harness: parsed.harness,
+      });
       tx.primary = resolved.primary;
       const written = copyInstall(sourceDir, resolved.primary, installSet, result.models);
       log('Installed ' + written.files.length + ' files to ' + written.target);
+      // Written inside the copied plugin dir, so rollback (tx.primary) covers it.
+      // The pi secondary symlink (below) exposes the same file at ~/.pi/agent/skills/.
+      const cfg = writeAgentConfigFile(resolved.primary, agentConfig);
+      log('Saved configuration to ' + cfg.path);
       const sec = linkSecondary(resolved.primary, resolved.secondary);
       if (sec) {
         if (!sec.existed) tx.secondary = sec.target;
@@ -584,7 +595,8 @@ const {
   promptAgentSelection,
   resolveSelectedAgents,
 } = require('./select-agents');
-const { ensureInstallDirectories, buildInstallSet, copyInstall, linkInstall, linkSecondary, detectExistingInstall, detectSecondaryConflict, moveAsideExistingInstall, discardBackup, rollbackInstall } = require('./install-files');
+const { ensureInstallDirectories, buildInstallSet, copyInstall, writeAgentConfigFile, linkInstall, linkSecondary, detectExistingInstall, detectSecondaryConflict, moveAsideExistingInstall, discardBackup, rollbackInstall } = require('./install-files');
+const { buildAgentConfig } = require('./agent-config');
 const {
   validateModel,
   expandModelName,
