@@ -428,6 +428,28 @@ async function confirmOverwrite(existing, options = {}) {
 }
 
 /**
+ * Copy-mode progress (task 8.1): one line per directory of the install set,
+ * naming the files about to be copied into it, e.g.
+ * "Copying agents: architect.md, worker.md". Top-level files are grouped as
+ * "top-level". Only file entries are named; directory entries are not listed.
+ *
+ * @param {{path: string, type: 'file'|'dir'}[]} installSet - From buildInstallSet
+ * @param {function} log - stdout logger
+ */
+function logCopyPlan(installSet, log) {
+  const groups = new Map();
+  for (const entry of installSet) {
+    if (entry.type !== 'file') continue;
+    const dir = path.posix.dirname(entry.path);
+    if (!groups.has(dir)) groups.set(dir, []);
+    groups.get(dir).push(path.posix.basename(entry.path));
+  }
+  for (const [dir, names] of groups) {
+    log('Copying ' + (dir === '.' ? 'top-level' : dir) + ': ' + names.join(', '));
+  }
+}
+
+/**
  * Main installation logic: argument validation, agent selection, model
  * configuration, then file installation (copy or --link, pi secondary link,
  * existing-install handling with backup/rollback). The `uninstall` subcommand
@@ -585,6 +607,10 @@ async function main(argv = args, options = {}) {
   let resolved;
   try {
     resolved = resolveHarnessPath(parsed.harness, parsed.global);
+    // Progress (task 8.1): where the harness resolved to, before anything is written.
+    log('Detecting harness ' + parsed.harness + ' (' + (parsed.global ? 'global' : 'local') + ' scope)');
+    log('Target installation path: ' + resolved.primary);
+    if (resolved.secondary) log('Pi secondary location: ' + resolved.secondary);
     const existing = detectExistingInstall(resolved.primary);
     // A pi secondary that already links to the primary is fine (it is correct
     // again after reinstall); anything else there would block linkSecondary.
@@ -617,10 +643,12 @@ async function main(argv = args, options = {}) {
     }
     if (parsed.link) {
       tx.primary = resolved.primary; // absent here (moved aside / never existed)
+      log('Creating symlink ' + resolved.primary + ' -> ' + path.resolve(sourceDir));
       const linked = linkInstall(sourceDir, resolved.primary);
       log('Note: symlink mode links the whole source directory; agent selection and model configuration are not applied.');
       log('Note: no .agent-config.json is written in symlink mode (it would be written into the source directory).');
       log('Linked ' + linked.target + ' -> ' + linked.source);
+      if (resolved.secondary) log('Creating pi secondary symlink ' + resolved.secondary + ' -> ' + resolved.primary);
       const sec = linkSecondary(resolved.primary, resolved.secondary);
       if (sec) {
         if (!sec.existed) tx.secondary = sec.target;
@@ -635,12 +663,15 @@ async function main(argv = args, options = {}) {
         harness: parsed.harness,
       });
       tx.primary = resolved.primary;
+      logCopyPlan(installSet, log);
       const written = copyInstall(sourceDir, resolved.primary, installSet, result.models);
       log('Installed ' + written.files.length + ' files to ' + written.target);
       // Written inside the copied plugin dir, so rollback (tx.primary) covers it.
       // The pi secondary symlink (below) exposes the same file at ~/.pi/agent/skills/.
+      log('Writing configuration file into ' + resolved.primary);
       const cfg = writeAgentConfigFile(resolved.primary, agentConfig);
       log('Saved configuration to ' + cfg.path);
+      if (resolved.secondary) log('Creating pi secondary symlink ' + resolved.secondary + ' -> ' + resolved.primary);
       const sec = linkSecondary(resolved.primary, resolved.secondary);
       if (sec) {
         if (!sec.existed) tx.secondary = sec.target;
