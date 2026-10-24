@@ -450,6 +450,42 @@ function logCopyPlan(installSet, log) {
 }
 
 /**
+ * Success summary (task 8.2). Printed once, at the end of a successful install
+ * (after the backup discard), so it is the last thing the run reports. Paths are
+ * the absolute paths actually used. Never called on failure, rollback, cancel or
+ * uninstall.
+ *
+ * @param {function} log - stdout logger
+ * @param {object} s
+ * @param {string} s.primary - Absolute installed (or linked) plugin path
+ * @param {string|null} s.secondary - Absolute pi secondary symlink path, or null
+ * @param {string|null} s.linkSource - Absolute source directory (link mode only)
+ * @param {string|null} s.cfgPath - Absolute .agent-config.json path (copy mode only)
+ * @param {boolean} s.link - True for --link (symlink) mode
+ * @param {boolean} s.global - True for global scope
+ * @param {string} s.harness - Harness name or path as given on the CLI
+ * @param {string[]} s.selectedAgents - Selected agent ids, in selection order
+ * @param {object} s.models - Model per selected agent (as written to the config)
+ */
+function logInstallSummary(log, s) {
+  if (s.link) {
+    log('Installation successful: five-role-team linked at ' + s.primary + ' -> ' + s.linkSource);
+  } else {
+    log('Installation successful: five-role-team installed at ' + s.primary);
+  }
+  log('  Mode: ' + (s.link ? 'symlink (--link)' : 'copy') + ', ' + (s.global ? 'global' : 'local') + ' scope, harness ' + s.harness);
+  if (s.secondary) log('  Pi secondary symlink: ' + s.secondary + ' -> ' + s.primary);
+  if (s.link) {
+    log('  Configuration file: none (no .agent-config.json is written in symlink mode)');
+    log('  Agents: the whole source directory is linked; agent selection and model configuration are not applied');
+  } else {
+    log('  Configuration file: ' + s.cfgPath);
+    log('  Agents and models:');
+    s.selectedAgents.forEach(id => log('    ' + id + ': ' + s.models[id]));
+  }
+}
+
+/**
  * Main installation logic: argument validation, agent selection, model
  * configuration, then file installation (copy or --link, pi secondary link,
  * existing-install handling with backup/rollback). The `uninstall` subcommand
@@ -604,9 +640,12 @@ async function main(argv = args, options = {}) {
   // A confirmed/--force overwrite moves the old install aside to a hidden
   // sibling first; on failure it is restored, on success it is deleted.
   const tx = { secondary: null, primary: null, backup: null, secondaryBackup: null, createdDirs: [], sourceDir };
+  // Absolute paths actually used, recorded for the success summary (task 8.2).
+  const outcome = { primary: null, secondary: null, linkSource: null, cfgPath: null };
   let resolved;
   try {
     resolved = resolveHarnessPath(parsed.harness, parsed.global);
+    outcome.primary = path.resolve(resolved.primary);
     // Progress (task 8.1): where the harness resolved to, before anything is written.
     log('Detecting harness ' + parsed.harness + ' (' + (parsed.global ? 'global' : 'local') + ' scope)');
     log('Target installation path: ' + resolved.primary);
@@ -645,6 +684,7 @@ async function main(argv = args, options = {}) {
       tx.primary = resolved.primary; // absent here (moved aside / never existed)
       log('Creating symlink ' + resolved.primary + ' -> ' + path.resolve(sourceDir));
       const linked = linkInstall(sourceDir, resolved.primary);
+      outcome.linkSource = linked.source;
       log('Note: symlink mode links the whole source directory; agent selection and model configuration are not applied.');
       log('Note: no .agent-config.json is written in symlink mode (it would be written into the source directory).');
       log('Linked ' + linked.target + ' -> ' + linked.source);
@@ -652,6 +692,7 @@ async function main(argv = args, options = {}) {
       const sec = linkSecondary(resolved.primary, resolved.secondary);
       if (sec) {
         if (!sec.existed) tx.secondary = sec.target;
+        outcome.secondary = sec.target;
         log('Linked ' + sec.target + ' -> ' + sec.source);
       }
     } else {
@@ -670,11 +711,13 @@ async function main(argv = args, options = {}) {
       // The pi secondary symlink (below) exposes the same file at ~/.pi/agent/skills/.
       log('Writing configuration file into ' + resolved.primary);
       const cfg = writeAgentConfigFile(resolved.primary, agentConfig);
+      outcome.cfgPath = cfg.path;
       log('Saved configuration to ' + cfg.path);
       if (resolved.secondary) log('Creating pi secondary symlink ' + resolved.secondary + ' -> ' + resolved.primary);
       const sec = linkSecondary(resolved.primary, resolved.secondary);
       if (sec) {
         if (!sec.existed) tx.secondary = sec.target;
+        outcome.secondary = sec.target;
         log('Linked ' + sec.target + ' -> ' + sec.source);
       }
     }
@@ -699,6 +742,14 @@ async function main(argv = args, options = {}) {
       log('Warning: could not delete the previous installation backup ' + b.backup + ': ' + err.message);
     }
   }
+  logInstallSummary(log, {
+    ...outcome,
+    link: parsed.link,
+    global: parsed.global,
+    harness: parsed.harness,
+    selectedAgents: result.selectedAgents,
+    models: result.models,
+  });
   return result;
 }
 
