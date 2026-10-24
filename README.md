@@ -57,7 +57,7 @@ Then point a project's own `CLAUDE.md` at **`/five-role-team:apply`**, not just 
 
 ### Options
 
-- `--global` or `--local` (one is required): install to the global skills directory (`~/.claude/skills/` or `~/.pi/agent/skills/`) or to the project's skills directory (`./.claude/skills/` or `./.pi/skills/`).
+- `--global` or `--local` (one is required): install to the global skills directory (`~/.claude/skills/`; `pi` also gets a symlink, see Harness notes) or to the project's skills directory (`./.claude/skills/` or `./.pi/skills/`).
 - `--harness <name|path>` (required): `pi`, `claude-code`, or a custom skills directory path.
 - `--link`: symlink the checkout instead of copying files (development mode).
 - `--force`: replace an existing installation without asking.
@@ -79,14 +79,10 @@ node install.js --global --harness pi
 Either flag skips the prompts. `--agents` picks the agents and keeps their default models. `--agent-models` overrides models; without `--agents`, every agent the harness supports is installed.
 
 ```bash
-node install.js --global --harness pi --agents architect,worker,reviewer,supervisor --agent-models "worker=sonnet"
+node install.js --global --harness pi --agents architect,worker,reviewer,supervisor,intern --agent-models "worker=sonnet"
 ```
 
-Symlink install for development. In `--link` mode the install points at the checkout, so the agent and model choices are not applied and no `.agent-config.json` is written.
-
-```bash
-node install.js --global --harness claude-code --link --agents architect,worker,reviewer,supervisor
-```
+For a development symlink install (`--link`), see the last example under Common scenarios.
 
 ### Common scenarios
 
@@ -130,6 +126,13 @@ A copy install is deleted, including `.agent-config.json`. A `--link` install lo
 - **`--local`** installs into the current directory, so run it from the project root.
 - Copy installs write `.agent-config.json` next to the plugin, recording the agents and models. `--link` installs write none.
 - Re-running over an existing installation asks before replacing it. Without a terminal it exits 1, so pass `--force` in scripts.
+
+### Testing the installer
+
+The manual install-mode matrix scripts live in the checkout: `test-install-modes.js` (install) and `test-uninstall-modes.js` (install then uninstall). Each covers 16 mode cells. Every cell runs in its own temp HOME and temp working directory, never in your real `~/.claude` or `~/.pi`. Run them from the checkout with an empty stdin:
+
+- `node test-install-modes.js </dev/null`
+- `node test-uninstall-modes.js </dev/null`
 
 ## Why a plugin instead of copy-pasting the agent files
 
