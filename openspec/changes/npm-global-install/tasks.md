@@ -3,7 +3,7 @@
 ## 1. Package
 
 - [x] 1.1 Update `package.json`: name `@pravinbashyal/five-role-team`, `bin` `five-role-team` → `install.js`, `files` whitelist, `publishConfig.access` public, version; make `install.js` executable; verify `npm pack --dry-run` lists the required files and excludes verify/test scripts, `openspec/`, `.claude/`, `.pi/`
-- [ ] 1.2 Add a sandboxed verify script that packs the tarball, installs it with `npm install -g --prefix <tmp>`, runs `five-role-team --help` and `five-role-team init --global --harness claude-code`, plus `five-role-team init --harness claude-code` from a temp project dir with temp HOME/cwd, and checks the files landed (never touching the real home or global prefix)
+- [x] 1.2 Add a sandboxed verify script that packs the tarball, installs it with `npm install -g --prefix <tmp>`, runs `five-role-team --help` and `five-role-team init --global --harness claude-code`, plus `five-role-team init --harness claude-code` from a temp project dir with temp HOME/cwd, and checks the files landed (never touching the real home or global prefix)
 
 ## 2. CLI
 
