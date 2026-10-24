@@ -1,0 +1,134 @@
+#!/usr/bin/env node
+'use strict';
+// Verify task 6.3: .agent-config.json is registered in the uninstall cleanup
+// list, and the cleanup helper removes it from an installed plugin directory
+// while leaving the rest of the installation alone.
+const fs = require('fs');
+const os = require('os');
+const path = require('path');
+
+const src = __dirname;
+const tmpRoot = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'verify-6-3-')));
+
+const installFiles = require(path.join(src, 'install-files.js'));
+const { main } = require(path.join(src, 'install.js'));
+const { UNINSTALL_CLEANUP_FILES, removeUninstallCleanupFiles } = installFiles;
+
+let failed = 0;
+function assert(c, m) { if (!c) { console.error('FAIL:', m); failed += 1; } else console.log('OK:', m); }
+const lst = (p) => fs.lstatSync(p, { throwIfNoEntry: false });
+const noPrompt = async () => { throw new Error('prompted'); };
+const CFG = '.agent-config.json';
+
+function env(name) {
+  const home = path.join(tmpRoot, name, 'home');
+  const work = path.join(tmpRoot, name, 'work');
+  fs.mkdirSync(home, { recursive: true });
+  fs.mkdirSync(work, { recursive: true });
+  process.env.HOME = home;
+  process.env.USERPROFILE = home;
+  process.chdir(work);
+  return { home, work };
+}
+async function install(argv) {
+  const r = await main(argv, { promptsImpl: noPrompt, log: () => {}, error: () => {} });
+  return r;
+}
+function throwsWith(fn, re) {
+  try { fn(); return false; } catch (err) { return re.test(err.message); }
+}
+
+(async () => {
+  // 1. The cleanup list registers the configuration file exactly.
+  assert(Array.isArray(UNINSTALL_CLEANUP_FILES) && UNINSTALL_CLEANUP_FILES.length === 1 &&
+    UNINSTALL_CLEANUP_FILES[0] === CFG, 'cleanup list contains exactly .agent-config.json');
+  assert(Object.isFrozen(UNINSTALL_CLEANUP_FILES), 'cleanup list is frozen');
+
+  // 2. Installed copy-mode plugin: helper removes the config written by 6.2.
+  {
+    const { home } = env('g-claude');
+    const r = await install(['--global', '--harness', 'claude-code', '--agents', 'architect,worker']);
+    const primary = path.join(home, '.claude', 'skills', 'five-role-team');
+    const cfgPath = path.join(primary, CFG);
+    assert(r.exitCode === 0 && fs.existsSync(cfgPath), 'setup: global install wrote .agent-config.json');
+    const removed = removeUninstallCleanupFiles(primary);
+    assert(removed.length === 1 && removed[0] === cfgPath, 'helper reports the config path as removed');
+    assert(lst(cfgPath) === undefined, '.agent-config.json is gone after cleanup');
+    assert(fs.existsSync(path.join(primary, 'SKILL.md')), 'SKILL.md left in place (helper removes only the cleanup list)');
+    assert(fs.existsSync(path.join(primary, 'agents', 'worker.md')), 'selected agent files left in place');
+    const again = removeUninstallCleanupFiles(primary);
+    assert(Array.isArray(again) && again.length === 0, 'second cleanup is a no-op returning []');
+  }
+
+  // 3. Pi global: the secondary symlink exposes the same directory, so the
+  //    config disappears from the secondary location as well.
+  {
+    const { home } = env('g-pi');
+    const r = await install(['--global', '--harness', 'pi', '--agents', 'worker']);
+    const primary = path.join(home, '.claude', 'skills', 'five-role-team');
+    const secondary = path.join(home, '.pi', 'agent', 'skills', 'five-role-team');
+    assert(r.exitCode === 0 && fs.existsSync(path.join(secondary, CFG)), 'setup: pi config visible via secondary');
+    removeUninstallCleanupFiles(primary);
+    assert(!fs.existsSync(path.join(primary, CFG)) && !fs.existsSync(path.join(secondary, CFG)),
+      'pi: config absent from primary and from secondary after cleanup');
+  }
+
+  // 4. Missing target directory: nothing to clean, no error.
+  {
+    const { work } = env('missing');
+    const missing = path.join(work, 'nope', 'five-role-team');
+    const removed = removeUninstallCleanupFiles(missing);
+    assert(Array.isArray(removed) && removed.length === 0, 'missing target directory returns []');
+    assert(lst(missing) === undefined, 'missing target directory is not created');
+  }
+
+  // 5. A symlink named like the config is refused and its target is untouched.
+  {
+    const { work } = env('symlink-cfg');
+    const dir = path.join(work, 'plugin');
+    fs.mkdirSync(dir, { recursive: true });
+    const victim = path.join(work, 'victim.txt');
+    fs.writeFileSync(victim, 'keep me\n');
+    fs.symlinkSync(victim, path.join(dir, CFG));
+    assert(throwsWith(() => removeUninstallCleanupFiles(dir), /not a regular file/),
+      'symlink named .agent-config.json is refused with a clear error');
+    assert(lst(path.join(dir, CFG)) && lst(path.join(dir, CFG)).isSymbolicLink(), 'refused symlink is still in place');
+    assert(fs.readFileSync(victim, 'utf8') === 'keep me\n', 'symlink target was not removed or modified');
+  }
+
+  // 6. A directory named like the config is refused and kept.
+  {
+    const { work } = env('dir-cfg');
+    const dir = path.join(work, 'plugin');
+    fs.mkdirSync(path.join(dir, CFG), { recursive: true });
+    assert(throwsWith(() => removeUninstallCleanupFiles(dir), /not a regular file/),
+      'directory named .agent-config.json is refused with a clear error');
+    assert(lst(path.join(dir, CFG)) && lst(path.join(dir, CFG)).isDirectory(), 'refused directory is kept');
+  }
+
+  // 7. Bad input is rejected before touching the filesystem.
+  {
+    assert(throwsWith(() => removeUninstallCleanupFiles(''), /target directory is required/),
+      'empty target directory is rejected');
+    assert(throwsWith(() => removeUninstallCleanupFiles(undefined), /target directory is required/),
+      'undefined target directory is rejected');
+  }
+
+  // 8. A regular file at the target path is not a plugin directory.
+  {
+    const { work } = env('file-target');
+    const f = path.join(work, 'five-role-team');
+    fs.writeFileSync(f, 'x\n');
+    assert(throwsWith(() => removeUninstallCleanupFiles(f), /not a directory/),
+      'regular file as target is rejected');
+    assert(fs.existsSync(f), 'regular file at target is untouched');
+  }
+
+  fs.rmSync(tmpRoot, { recursive: true, force: true });
+
+  if (failed > 0) {
+    console.error(`\n${failed} assertion(s) failed`);
+    process.exit(1);
+  }
+  console.log('\nAll task 6.3 checks passed');
+})().catch((e) => { console.error('FAIL: unexpected error', e); process.exit(1); });

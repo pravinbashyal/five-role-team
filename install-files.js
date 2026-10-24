@@ -391,6 +391,60 @@ function writeAgentConfigFile(targetDir, config) {
 }
 
 /**
+ * Files that uninstall removes from an installed plugin directory (task 6.3).
+ * Holds file names only, relative to the plugin directory.
+ */
+const UNINSTALL_CLEANUP_FILES = Object.freeze([AGENT_CONFIG_FILE]);
+
+/**
+ * Remove one cleanup file from a plugin directory. Missing file is not an error.
+ * A symlink or non-regular entry under that name is refused, never followed.
+ *
+ * @returns {boolean} true if the file was removed, false if it did not exist
+ * @throws {Error} with a clear message on any failure
+ */
+function removeCleanupFile(dir, name) {
+  const file = path.join(dir, name);
+  const st = fs.lstatSync(file, { throwIfNoEntry: false });
+  if (!st) return false;
+  if (!st.isFile()) {
+    throw new Error(`Refusing to remove ${file}: not a regular file`);
+  }
+  try {
+    fs.unlinkSync(file);
+  } catch (err) {
+    throw new Error(`Failed to remove ${file}: ${err.message}`);
+  }
+  return true;
+}
+
+/**
+ * Remove every file in UNINSTALL_CLEANUP_FILES from an installed plugin
+ * directory. Only those names are touched; nothing else in the directory is
+ * removed here. A missing directory has nothing to clean and returns [].
+ *
+ * @param {string} targetDir - Installed plugin directory
+ * @returns {string[]} Absolute paths of the files that were removed
+ * @throws {Error} with a clear message on any failure
+ */
+function removeUninstallCleanupFiles(targetDir) {
+  if (typeof targetDir !== 'string' || targetDir.trim().length === 0) {
+    throw new Error('Installation target directory is required');
+  }
+  const dir = path.resolve(targetDir);
+  const st = fs.lstatSync(dir, { throwIfNoEntry: false });
+  if (!st) return [];
+  if (!st.isDirectory()) {
+    throw new Error(`Cannot clean up ${dir}: not a directory`);
+  }
+  const removed = [];
+  for (const name of UNINSTALL_CLEANUP_FILES) {
+    if (removeCleanupFile(dir, name)) removed.push(path.join(dir, name));
+  }
+  return removed;
+}
+
+/**
  * Symlink mode installation: create a single symlink at `targetDir` pointing
  * at the plugin source directory (spec: "a symlink is created at
  * ~/.claude/skills/five-role-team/ pointing to the source directory").
@@ -689,6 +743,8 @@ module.exports = {
   linkSecondary,
   copyInstall,
   writeAgentConfigFile,
+  UNINSTALL_CLEANUP_FILES,
+  removeUninstallCleanupFiles,
   linkInstall,
   ensureDirectory,
   ensureInstallDirectories,

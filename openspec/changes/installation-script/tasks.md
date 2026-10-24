@@ -45,7 +45,7 @@
 
 - [x] 6.1 Create configuration file structure with agents array, models object, harness, and installedAt timestamp and verify JSON structure is valid
 - [x] 6.2 Save configuration file to `.agent-config.json` alongside installed plugin and verify file created at correct location
-- [ ] 6.3 Add configuration file to uninstall cleanup list and verify it's removed on uninstall
+- [x] 6.3 Add configuration file to uninstall cleanup list and verify it's removed on uninstall
 
 ## 7. Uninstallation Logic
 
