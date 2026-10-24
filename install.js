@@ -23,7 +23,7 @@ const prompts = require('prompts');
  * - --force: Force overwrite without confirmation
  * - uninstall: Subcommand (must be the first argument) that removes the installed
  *   plugin instead of installing it: `node install.js uninstall --global --harness pi`.
- *   The old `--uninstall` flag is rejected.
+ *   `--uninstall` is not a flag: it is rejected as an unknown flag.
  * - --agents <list>: Comma-separated list of agents (non-interactive mode)
  * - --agent-models <map>: Comma-separated key=value pairs for agent models (non-interactive mode)
  * 
@@ -46,7 +46,7 @@ const prompts = require('prompts');
  *   - If --agents flag is provided without a value, an error is added
  *   - If --agent-models flag is provided without a value, an error is added
  *   - Malformed --agent-models pairs (no '=', empty key or value) add errors
- *   - Unknown flags are silently ignored
+ *   - Unknown flags (any '-'-prefixed token that is not recognised, including --uninstall) add an error
  */
 function parseArgs(argv) {
   const parsed = {
@@ -89,10 +89,9 @@ function parseArgs(argv) {
       parsed.link = true;
     } else if (arg === '--force') {
       parsed.force = true;
-    } else if (arg === '--uninstall') {
-      // Replaced by the `uninstall` subcommand. Rejected so it cannot silently
-      // fall through to an install.
-      parsed.errors.push('--uninstall was replaced by the uninstall subcommand (node install.js uninstall --global|--local --harness <name|path>)');
+    } else if (arg === '--help' || arg === '-h') {
+      // Handled before parsing (see the early --help check); accepted here so it
+      // is not reported as an unknown flag.
     } else if (arg === 'uninstall') {
       // Reached only when `uninstall` is not the first argument (index 0 is
       // stripped above). Rejected so it cannot silently fall through to an install.
@@ -140,8 +139,12 @@ function parseArgs(argv) {
         // --agent-models without a value is an error
         parsed.errors.push('--agent-models requires a value (comma-separated key=value pairs)');
       }
+    } else if (arg.startsWith('-')) {
+      // Any other flag-looking token is unknown. Rejected rather than ignored so a
+      // removed or mistyped flag (e.g. the old --uninstall) cannot silently run
+      // an install with the flag dropped.
+      parsed.errors.push(`Unknown flag: ${arg} (run "node install.js --help" for usage)`);
     }
-    // Unknown flags are silently ignored (as per task 2.1 scope)
   }
 
   // Validate that exactly one of --global or --local is provided (task 2.2)

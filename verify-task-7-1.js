@@ -227,7 +227,7 @@ try {
     const r = spawnSync(process.execPath, [path.join(SRC, 'install.js'), '--uninstall', '--global', '--harness', 'claude-code'], {
       cwd: work, env: { ...process.env, HOME: home, USERPROFILE: home }, input: '', encoding: 'utf8', timeout: 60000,
     });
-    assert(r.status === 1 && /replaced by the uninstall subcommand/.test(r.stderr || ''), '--uninstall flag: rejected with exit 1');
+    assert(r.status === 1 && /Unknown flag: --uninstall/.test(r.stderr || ''), '--uninstall flag: rejected as unknown flag with exit 1');
     assert(lst(primary) && lst(primary).isDirectory(), '--uninstall flag: existing install left untouched');
   }
 
