@@ -523,7 +523,14 @@ function uninstallPiSecondary(primary, secondary) {
   if (path.basename(abs) !== 'five-role-team') {
     throw new Error(`Refusing to remove ${abs}: not a five-role-team installation path`);
   }
-  const st = fs.lstatSync(abs, { throwIfNoEntry: false });
+  let st;
+  try {
+    st = fs.lstatSync(abs, { throwIfNoEntry: false });
+  } catch (err) {
+    // ENOTDIR: a parent path component is a regular file, so nothing is there.
+    if (err.code === 'ENOTDIR') return null;
+    throw err;
+  }
   if (!st) return null;
   if (!st.isSymbolicLink()) {
     return { kind: 'kept', path: abs, reason: 'it is not a symlink' };
