@@ -55,7 +55,7 @@
 - [x] 7.4 Implement configuration file removal during uninstall and verify `.agent-config.json` is deleted (sandboxed only)
 - [x] 7.5 Remove the `--uninstall` flag everywhere (parser, `--help` text, `test-parse-args.js`/`test-cli-examples.js`, existing verify scripts) so `uninstall` is only a subcommand, and verify `--uninstall` is rejected as an unknown flag (sandboxed only)
 - [x] 7.6 Make `uninstall` with nothing installed exit 1 with a "Nothing to uninstall" message and remove nothing, and verify (sandboxed only)
-- [ ] 7.7 Add a shared sandbox helper for verify scripts (temp HOME and temp cwd; abort if HOME resolves to the real home directory) and use it in `verify-task-6-2.js`, `6-3`, `7-1` and any later install/uninstall verify script, and verify the guard aborts against a real HOME
+- [x] 7.7 Add a shared sandbox helper for verify scripts (temp HOME and temp cwd; abort if HOME resolves to the real home directory) and use it in `verify-task-6-2.js`, `6-3`, `7-1` and any later install/uninstall verify script, and verify the guard aborts against a real HOME
 
 ## 8. User Feedback and Validation
 

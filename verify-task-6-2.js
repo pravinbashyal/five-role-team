@@ -3,11 +3,13 @@
 // Verify task 6.2: save .agent-config.json alongside the installed plugin and
 // check that the file is created at the correct location.
 const fs = require('fs');
-const os = require('os');
 const path = require('path');
+const { createSandbox } = require(path.join(__dirname, 'verify-sandbox.js'));
 
 const src = __dirname;
-const tmpRoot = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'verify-6-2-')));
+// SANDBOXED ONLY: every HOME/cwd change and every install call below runs in
+// this temp sandbox. The helper aborts (exit 2) if HOME resolves to the real home.
+const sb = createSandbox();
 
 // Fault injection for the config-write rollback check: when FAIL_AFTER_CONFIG
 // is set, the real writer runs (file is created) and then the install errors.
@@ -27,18 +29,15 @@ const lst = (p) => fs.lstatSync(p, { throwIfNoEntry: false });
 const noPrompt = async () => { throw new Error('prompted'); };
 const CFG = '.agent-config.json';
 
+// Points HOME/USERPROFILE and the cwd at this scenario's sandbox folders (guarded).
 function env(name) {
-  const home = path.join(tmpRoot, name, 'home');
-  const work = path.join(tmpRoot, name, 'work');
-  fs.mkdirSync(home, { recursive: true });
-  fs.mkdirSync(work, { recursive: true });
-  process.env.HOME = home;
-  process.env.USERPROFILE = home;
-  process.chdir(work);
-  return { home, work };
+  const sc = sb.scenario(name);
+  sb.enter(sc);
+  return { home: sc.home, work: sc.cwd };
 }
 async function run(argv) {
   const out = []; const err = [];
+  sb.assertSafe();
   const r = await main(argv, { promptsImpl: noPrompt, log: (m) => out.push(m), error: (m) => err.push(m) });
   return { r, out: out.join('\n'), err: err.join('\n') };
 }
@@ -47,7 +46,7 @@ function readCfg(p) { return JSON.parse(fs.readFileSync(p, 'utf8')); }
 // Source copy whose agents/worker.md has no frontmatter, so copyInstall fails
 // after SKILL.md/commands/etc. were written (exercises rollback of the config path).
 function brokenSource(name) {
-  const d = path.join(tmpRoot, name);
+  const d = path.join(sb.root, name);
   fs.mkdirSync(d, { recursive: true });
   for (const n of ['SKILL.md', 'commands', 'conventions', '.claude-plugin', 'agents', 'pi']) {
     fs.cpSync(path.join(src, n), path.join(d, n), { recursive: true });
@@ -134,6 +133,7 @@ function brokenSource(name) {
     const { home } = env('g-rollback');
     const broken = brokenSource('broken-src');
     const errs = [];
+    sb.assertSafe();
     const res = await main(['--global', '--harness', 'pi', '--agents', 'worker'], {
       promptsImpl: noPrompt, sourceDir: broken, log: () => {}, error: (m) => errs.push(m),
     });
@@ -150,6 +150,7 @@ function brokenSource(name) {
     process.env.FAIL_AFTER_CONFIG = '1';
     let res;
     try {
+      sb.assertSafe();
       res = await main(['--global', '--harness', 'pi', '--agents', 'worker'], {
         promptsImpl: noPrompt, log: () => {}, error: () => {},
       });
@@ -162,9 +163,11 @@ function brokenSource(name) {
     assert(!fs.existsSync(primary), 'rollback after config write: plugin directory removed');
   }
 
+})().catch((e) => { console.error('FAIL: unexpected error', e); failed += 1; }).finally(() => {
+  sb.cleanup();
   if (failed > 0) {
     console.error(`\n${failed} assertion(s) failed`);
     process.exit(1);
   }
   console.log('\nAll task 6.2 checks passed');
-})().catch((e) => { console.error('FAIL: unexpected error', e); process.exit(1); });
+});

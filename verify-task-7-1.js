@@ -10,44 +10,29 @@
 // are covered by their own tasks.
 //
 // SANDBOXED ONLY. This script:
-//   - captures the real home directory, then points HOME/USERPROFILE at a fresh
-//     temp directory and chdirs into a temp work folder before anything else;
-//   - aborts (exit 2, nothing removed) if HOME ever resolves to the real home;
-//   - runs the CLI only as a child process with that sandboxed HOME and cwd.
+//   - uses the shared helper verify-sandbox.js, which captures the real home and
+//     points HOME/USERPROFILE at a fresh temp root with a temp work folder;
+//   - aborts (exit 2, nothing removed) if HOME or the cwd ever resolves to the
+//     real home or outside the temp root (sb.assertSafe);
+//   - runs the CLI only as a child process via sb.run, with that sandboxed HOME and cwd.
 // Nothing touches the real ~/.claude or ~/.pi.
 const fs = require('fs');
-const os = require('os');
 const path = require('path');
-const { spawnSync } = require('child_process');
+const { createSandbox } = require(path.join(__dirname, 'verify-sandbox.js'));
 
 const SRC = __dirname;
 const PLUGIN = 'five-role-team';
 const CFG = '.agent-config.json';
 
-// 1. Capture the real home BEFORE HOME is changed.
-const REAL_HOME = fs.realpathSync(os.homedir());
+// 1. Create the sandbox (captures the real home first) and point HOME/cwd at it.
+const sb = createSandbox();
+const TMP_ROOT = sb.root;
+const SANDBOX_HOME = sb.home;
+const SANDBOX_WORK = sb.cwd;
+sb.activate();
 
-// 2. Create the sandbox and point HOME/cwd at it.
-const TMP_ROOT = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'verify-7-1-')));
-const SANDBOX_HOME = path.join(TMP_ROOT, 'home');
-const SANDBOX_WORK = path.join(TMP_ROOT, 'work');
-fs.mkdirSync(SANDBOX_HOME, { recursive: true });
-fs.mkdirSync(SANDBOX_WORK, { recursive: true });
-process.env.HOME = SANDBOX_HOME;
-process.env.USERPROFILE = SANDBOX_HOME;
-process.chdir(SANDBOX_WORK);
-
-// 3. Guard: refuse to run if HOME resolves to the real home or the cwd is not the sandbox.
-function assertSandboxed() {
-  const resolvedHome = fs.realpathSync(os.homedir());
-  const resolvedCwd = fs.realpathSync(process.cwd());
-  const inTmp = (p) => p === TMP_ROOT || p.startsWith(TMP_ROOT + path.sep);
-  if (resolvedHome === REAL_HOME || !inTmp(resolvedHome) || !inTmp(resolvedCwd)) {
-    console.error(`ABORT: sandbox guard tripped (home=${resolvedHome}, cwd=${resolvedCwd}, realHome=${REAL_HOME}). Nothing was removed.`);
-    process.exit(2);
-  }
-}
-assertSandboxed();
+// 2. Guard, re-checked before every spawn.
+const assertSandboxed = () => sb.assertSafe();
 
 const REAL_CONFIG_BEFORE = fs.existsSync(path.join(SRC, CFG));
 
@@ -59,54 +44,23 @@ const lst = (p) => fs.lstatSync(p, { throwIfNoEntry: false });
 
 // Run the real CLI entry point as a child process, sandboxed by env and cwd.
 function cli(args, cwd = SANDBOX_WORK) {
-  assertSandboxed();
-  const r = spawnSync(process.execPath, [path.join(SRC, 'install.js'), ...args], {
-    cwd,
-    env: { ...process.env, HOME: SANDBOX_HOME, USERPROFILE: SANDBOX_HOME },
-    input: '', // no TTY and no stdin: any unexpected prompt cannot be answered
-    encoding: 'utf8',
-    timeout: 60000,
-  });
-  const out = r.stdout || '';
-  const err = r.stderr || '';
-  return { status: r.status, out, err, text: out + err };
+  return sb.run([path.join(SRC, 'install.js'), ...args], { home: SANDBOX_HOME, cwd });
 }
 
 // Fresh sandbox homes/work folders per scenario so runs cannot interact.
 function resetScenario(name) {
-  const home = path.join(TMP_ROOT, name, 'home');
-  const work = path.join(TMP_ROOT, name, 'work');
-  fs.rmSync(path.join(TMP_ROOT, name), { recursive: true, force: true });
-  fs.mkdirSync(home, { recursive: true });
-  fs.mkdirSync(work, { recursive: true });
-  return { home, work };
+  const sc = sb.scenario(name);
+  return { home: sc.home, work: sc.cwd };
 }
 
 // Install via the CLI with the sandbox HOME of this scenario. Non-interactive
 // (--agents with no prompts), so this only sets up the state to uninstall.
 function install(home, work, scope, extra) {
-  const r = spawnSync(process.execPath, [path.join(SRC, 'install.js'), scope, '--harness', 'claude-code', '--agents', 'architect,worker', ...extra], {
-    cwd: work,
-    env: { ...process.env, HOME: home, USERPROFILE: home },
-    input: '',
-    encoding: 'utf8',
-    timeout: 60000,
-  });
-  return r;
+  return sb.run([path.join(SRC, 'install.js'), scope, '--harness', 'claude-code', '--agents', 'architect,worker', ...extra], { home, cwd: work });
 }
 
 function uninstall(home, work, scope) {
-  assertSandboxed();
-  const r = spawnSync(process.execPath, [path.join(SRC, 'install.js'), 'uninstall', scope, '--harness', 'claude-code'], {
-    cwd: work,
-    env: { ...process.env, HOME: home, USERPROFILE: home },
-    input: '',
-    encoding: 'utf8',
-    timeout: 60000,
-  });
-  const out = r.stdout || '';
-  const err = r.stderr || '';
-  return { status: r.status, out, err, text: out + err };
+  return sb.run([path.join(SRC, 'install.js'), 'uninstall', scope, '--harness', 'claude-code'], { home, cwd: work });
 }
 
 try {
@@ -224,9 +178,7 @@ try {
     const primary = path.join(home, '.claude', 'skills', PLUGIN);
     const inst = install(home, work, '--global', ['--agent-models', 'architect=opus,worker=haiku']);
     assert(inst.status === 0, 'setup: global copy install for old-flag check');
-    const r = spawnSync(process.execPath, [path.join(SRC, 'install.js'), '--uninstall', '--global', '--harness', 'claude-code'], {
-      cwd: work, env: { ...process.env, HOME: home, USERPROFILE: home }, input: '', encoding: 'utf8', timeout: 60000,
-    });
+    const r = sb.run([path.join(SRC, 'install.js'), '--uninstall', '--global', '--harness', 'claude-code'], { home, cwd: work });
     assert(r.status === 1 && /Unknown flag: --uninstall/.test(r.stderr || ''), '--uninstall flag: rejected as unknown flag with exit 1');
     assert(lst(primary) && lst(primary).isDirectory(), '--uninstall flag: existing install left untouched');
   }
@@ -235,10 +187,7 @@ try {
   //     an install (it must not start the install prompt or write anything).
   {
     const { home, work } = resetScenario('misplaced-uninstall');
-    assertSandboxed();
-    const r0 = spawnSync(process.execPath, [path.join(SRC, 'install.js'), '--global', '--harness', 'claude-code', 'uninstall'], {
-      cwd: work, env: { ...process.env, HOME: home, USERPROFILE: home }, input: '', encoding: 'utf8', timeout: 60000,
-    });
+    const r0 = sb.run([path.join(SRC, 'install.js'), '--global', '--harness', 'claude-code', 'uninstall'], { home, cwd: work });
     const r = { status: r0.status, err: r0.stderr || '' };
     assert(r.status === 1 && /uninstall must be the first argument/.test(r.err), 'misplaced uninstall: rejected with exit 1');
     assert(!fs.existsSync(path.join(home, '.claude')), 'misplaced uninstall: nothing created in the sandbox HOME');
@@ -254,7 +203,7 @@ try {
 
   assert(REAL_CONFIG_BEFORE === fs.existsSync(path.join(SRC, CFG)), 'source checkout: no .agent-config.json created or removed in the repo');
 } finally {
-  fs.rmSync(TMP_ROOT, { recursive: true, force: true });
+  sb.cleanup();
 }
 
 if (failed > 0) {
