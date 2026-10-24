@@ -61,7 +61,7 @@
 
 - [x] 8.1 Add progress messages during installation (detecting harness, copying files, creating symlinks) and verify messages shown at each step
 - [x] 8.2 Add success confirmation with installation path and configuration summary and verify final message shows correct paths
-- [ ] 8.3 Add error messages for invalid harness paths, missing permissions, or failed operations and verify clear error messages on failure
+- [x] 8.3 Add error messages for invalid harness paths, missing permissions, or failed operations and verify clear error messages on failure
 - [ ] 8.4 Validate script is run from five-role-team directory (contains `.claude-plugin/plugin.json`) and verify error on invalid directory
 
 ## 9. Documentation and Testing

@@ -264,7 +264,12 @@ function readDefaultModels(agentIds, sourceDir = __dirname) {
       continue;
     }
 
-    const content = fs.readFileSync(file, 'utf8');
+    let content;
+    try {
+      content = fs.readFileSync(file, 'utf8');
+    } catch (err) {
+      throw new Error(`Cannot read agent file ${file}: ${describeFsError(err)}`);
+    }
     const frontmatter = content.match(/^---\r?\n([\s\S]*?)\r?\n---/);
     if (!frontmatter) {
       continue;
@@ -588,6 +593,16 @@ async function main(argv = args, options = {}) {
   }
 
   const hasModelFlag = Object.keys(parsed.agentModels).length > 0;
+  // With neither --agents nor --agent-models, the agent and model prompts run. Without
+  // a terminal they can never be answered, so refuse up front with a clear message
+  // instead of exiting silently (task 8.3). Injected prompts (tests) bypass this check.
+  if (parsed.agents === null && !hasModelFlag && !options.promptsImpl && !(process.stdin && process.stdin.isTTY)) {
+    return fail(
+      'Error: No interactive input available: stdin is not a terminal, so the agent and model prompts cannot be answered.',
+      '  For a non-interactive install pass --agents <list> and --agent-models <map>, for example:',
+      '  node install.js --global --harness pi --agents architect,worker --agent-models "worker=sonnet"'
+    );
+  }
   const cancel = () => {
     log('Installation cancelled.');
     result.cancelled = true;
@@ -629,7 +644,7 @@ async function main(argv = args, options = {}) {
     result.selectedAgents = selectedAgents;
     result.models = models;
   } catch (err) {
-    return fail('Error: ' + err.message);
+    return fail('Error: ' + describeFsError(err));
   }
 
   log('Selected agents and models:');
@@ -722,7 +737,7 @@ async function main(argv = args, options = {}) {
       }
     }
   } catch (err) {
-    const lines = ['Error: ' + err.message];
+    const lines = ['Error: ' + describeFsError(err)];
     if (tx.backup || tx.secondaryBackup || tx.primary || tx.createdDirs.length > 0) {
       // tx.primary is only set once the write phase started, so its target
       // was absent before this run and is safe to remove.
@@ -761,7 +776,7 @@ const {
   promptAgentSelection,
   resolveSelectedAgents,
 } = require('./select-agents');
-const { ensureInstallDirectories, buildInstallSet, copyInstall, writeAgentConfigFile, linkInstall, linkSecondary, detectExistingInstall, detectSecondaryConflict, moveAsideExistingInstall, discardBackup, rollbackInstall, uninstallInstall, uninstallPiSecondary } = require('./install-files');
+const { ensureInstallDirectories, buildInstallSet, copyInstall, writeAgentConfigFile, linkInstall, linkSecondary, detectExistingInstall, detectSecondaryConflict, moveAsideExistingInstall, discardBackup, rollbackInstall, uninstallInstall, uninstallPiSecondary, describeFsError } = require('./install-files');
 const { buildAgentConfig } = require('./agent-config');
 const {
   validateModel,
@@ -795,7 +810,7 @@ if (require.main === module && !args.includes('--help') && !args.includes('-h'))
   main().then(result => {
     if (result.exitCode !== 0) process.exit(result.exitCode);
   }).catch(err => {
-    console.error('Error:', err.message);
+    console.error('Error:', describeFsError(err));
     process.exit(1);
   });
 }

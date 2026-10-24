@@ -4,6 +4,38 @@ const fs = require('fs');
 const path = require('path');
 const { isPiHarness } = require('./select-agents');
 
+// Plain-language cause for the fs error codes an install can realistically hit.
+const FS_ERROR_CAUSES = {
+  EACCES: 'permission denied',
+  EPERM: 'permission denied',
+  ENOTDIR: 'a parent path is a file, not a directory',
+  ENOENT: 'no such file or directory',
+  EEXIST: 'something already exists at this path',
+  EROFS: 'the file system is read-only',
+  ENOSPC: 'no space left on device',
+  ELOOP: 'too many levels of symbolic links',
+  ENAMETOOLONG: 'file name too long',
+};
+
+/**
+ * Human-readable text for an error raised by an fs or symlink call (task 8.3).
+ * Keeps the Node message, which already names the path and the operation, and
+ * appends the likely cause when the error code is one an install can hit. Errors
+ * without a known code (including the installer's own messages) are returned as is.
+ *
+ * @param {Error|{code?: string, message?: string}} err
+ * @returns {string}
+ */
+function describeFsError(err) {
+  const message = err && err.message ? err.message : String(err);
+  const cause = err && typeof err.code === 'string' && Object.prototype.hasOwnProperty.call(FS_ERROR_CAUSES, err.code)
+    ? FS_ERROR_CAUSES[err.code]
+    : null;
+  // Node's own text often already states the cause (e.g. "permission denied"), so
+  // it is only appended when it is not there yet.
+  return cause && !message.includes(cause) ? `${message} (likely cause: ${cause})` : message;
+}
+
 /**
  * Validate that a directory exists (or can be created) and is writable, and
  * create it (with any missing parents) when it does not exist.
@@ -29,7 +61,7 @@ function ensureDirectory(dir) {
     stat = fs.statSync(target);
   } catch (err) {
     if (err.code !== 'ENOENT' && err.code !== 'ENOTDIR') {
-      throw new Error(`Cannot access ${target}: ${err.message}`);
+      throw new Error(`Cannot access ${target}: ${describeFsError(err)}`);
     }
   }
 
@@ -51,7 +83,7 @@ function ensureDirectory(dir) {
       ancestorStat = fs.statSync(ancestor);
     } catch (err) {
       if (err.code !== 'ENOENT' && err.code !== 'ENOTDIR') {
-        throw new Error(`Cannot access ${ancestor}: ${err.message}`);
+        throw new Error(`Cannot access ${ancestor}: ${describeFsError(err)}`);
       }
     }
     if (ancestorStat) {
@@ -75,7 +107,7 @@ function ensureDirectory(dir) {
   try {
     fs.mkdirSync(target, { recursive: true });
   } catch (err) {
-    throw new Error(`Cannot create ${target}: ${err.message}`);
+    throw new Error(`Cannot create ${target}: ${describeFsError(err)}`);
   }
   return { path: target, created: true, createdPaths: missing.reverse() };
 }
@@ -339,7 +371,7 @@ function copyInstall(sourceDir, targetDir, installSet, models) {
     }
   } catch (err) {
     if (err && /^(Invalid install path|No model configured|Agent file|Model must)/.test(err.message)) throw err;
-    throw new Error(`Copy installation failed: ${err.message}`);
+    throw new Error(`Copy installation failed: ${describeFsError(err)}`);
   }
   return written;
 }
@@ -374,7 +406,10 @@ function writeAgentConfigFile(targetDir, config) {
   try {
     st = fs.statSync(dir);
   } catch (err) {
-    throw new Error(`Cannot write configuration file: ${dir} does not exist`);
+    if (err.code === 'ENOENT') {
+      throw new Error(`Cannot write configuration file: ${dir} does not exist`);
+    }
+    throw new Error(`Cannot write configuration file: cannot access ${dir}: ${describeFsError(err)}`);
   }
   if (!st.isDirectory()) {
     throw new Error(`Cannot write configuration file: ${dir} is not a directory`);
@@ -385,7 +420,7 @@ function writeAgentConfigFile(targetDir, config) {
     if (err.code === 'EEXIST') {
       throw new Error(`Cannot write configuration file: ${file} already exists`);
     }
-    throw new Error(`Cannot write configuration file ${file}: ${err.message}`);
+    throw new Error(`Cannot write configuration file ${file}: ${describeFsError(err)}`);
   }
   return { path: file };
 }
@@ -585,7 +620,7 @@ function linkInstall(sourceDir, targetDir) {
   try {
     fs.symlinkSync(source, target, 'dir');
   } catch (err) {
-    throw new Error(`Symlink installation failed: ${err.message}`);
+    throw new Error(`Symlink installation failed: ${describeFsError(err)}`);
   }
   return { target, source };
 }
@@ -625,7 +660,7 @@ function linkSecondary(primary, secondary) {
   try {
     fs.symlinkSync(source, target, 'dir');
   } catch (err) {
-    throw new Error(`Secondary symlink creation failed: ${err.message}`);
+    throw new Error(`Secondary symlink creation failed: ${describeFsError(err)}`);
   }
   return { target, source };
 }
@@ -642,7 +677,15 @@ function detectExistingInstall(target) {
     throw new Error('Installation target directory is required');
   }
   const abs = path.resolve(target);
-  const st = fs.lstatSync(abs, { throwIfNoEntry: false });
+  let st;
+  try {
+    st = fs.lstatSync(abs, { throwIfNoEntry: false });
+  } catch (err) {
+    // ENOTDIR: a parent component is a regular file, so nothing is installed here.
+    // Return "nothing found" and let the directory validation report the real cause.
+    if (err.code === 'ENOTDIR') return null;
+    throw err;
+  }
   if (!st) return null;
   if (st.isSymbolicLink()) {
     const linkTarget = fs.readlinkSync(abs);
@@ -699,7 +742,7 @@ function removeExistingInstall(target, opts = {}) {
     if (existing.isDirectory()) fs.rmSync(abs, { recursive: true });
     else fs.unlinkSync(abs);
   } catch (err) {
-    throw new Error(`Failed to remove existing installation ${abs}: ${err.message}`);
+    throw new Error(`Failed to remove existing installation ${abs}: ${describeFsError(err)}`);
   }
   return true;
 }
@@ -787,7 +830,7 @@ function moveAsideExistingInstall(target, opts = {}) {
   try {
     fs.renameSync(checked.abs, backup);
   } catch (err) {
-    throw new Error(`Failed to remove existing installation ${checked.abs}: ${err.message}`);
+    throw new Error(`Failed to remove existing installation ${checked.abs}: ${describeFsError(err)}`);
   }
   return { from: checked.abs, backup };
 }
@@ -825,7 +868,7 @@ function rollbackInstall(state) {
   const src = state.sourceDir ? path.resolve(state.sourceDir) : null;
   const contains = (outer, inner) => inner === outer || inner.startsWith(outer + path.sep);
   const attempt = (label, fn) => {
-    try { fn(); } catch (err) { out.errors.push(`${label}: ${err.message}`); }
+    try { fn(); } catch (err) { out.errors.push(`${label}: ${describeFsError(err)}`); }
   };
   const removePath = (p) => {
     const abs = path.resolve(p);
@@ -871,6 +914,7 @@ function rollbackInstall(state) {
 }
 
 module.exports = {
+  describeFsError,
   detectExistingInstall,
   detectSecondaryConflict,
   removeExistingInstall,
