@@ -69,7 +69,7 @@
 - [x] 9.1 Update README.md with installation instructions including interactive and non-interactive examples and verify documented commands work as written
 - [x] 9.2 Add examples for common scenarios (skip designer, custom models, development symlink install) in README and verify each example runs successfully
 - [x] 9.3 Create manual test script that validates each installation mode (global/local, pi/claude-code, copy/symlink, with/without agents) and verify all modes tested
-- [ ] 9.4 Test uninstallation for each installation mode and verify clean removal in all cases (sandboxed only)
+- [x] 9.4 Test uninstallation for each installation mode and verify clean removal in all cases (sandboxed only)
 
 ## Workflow follow-up
 
