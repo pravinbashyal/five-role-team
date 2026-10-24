@@ -22,6 +22,7 @@
 const fs = require('fs');
 const path = require('path');
 const { createSandbox } = require(path.join(__dirname, 'verify-sandbox.js'));
+const { copyPluginSource, primaryPath, secondaryPath } = require(path.join(__dirname, 'verify-matrix.js'));
 
 const README = path.join(__dirname, 'README.md');
 const MODEL_SHORT = {
@@ -41,16 +42,6 @@ function present(p) {
 
 const sameList = (a, b) => a.length === b.length && a.every((v, i) => v === b[i]);
 const listDir = (d) => fs.readdirSync(d).filter((f) => f.endsWith('.md')).map((f) => f.slice(0, -3)).sort();
-
-// Same copy set as verify-task-8-4.js, plus a link to node_modules for `prompts`.
-function copyPluginSource(dest) {
-  fs.mkdirSync(dest, { recursive: true });
-  for (const name of ['SKILL.md', 'agents', 'pi', 'commands', 'conventions', '.claude-plugin',
-    'install.js', 'install-files.js', 'select-agents.js', 'configure-models.js', 'agent-config.js']) {
-    fs.cpSync(path.join(__dirname, name), path.join(dest, name), { recursive: true });
-  }
-  fs.symlinkSync(path.join(__dirname, 'node_modules'), path.join(dest, 'node_modules'), 'dir');
-}
 
 // A fresh scenario (temp home and cwd) with the plugin source copied into its cwd.
 function freshSource(name) {
@@ -112,18 +103,9 @@ function tokenize(line) {
 // Expected installation paths for a command's scope and harness (README claims).
 function expectedPaths(argv, sc) {
   const harness = argv[argv.indexOf('--harness') + 1];
-  const global = argv.includes('--global');
-  const home = global ? sc.home : sc.cwd;
-  if (harness === 'pi') {
-    return {
-      primary: path.join(home, global ? '.claude' : '.pi', 'skills', 'five-role-team'),
-      secondary: global ? path.join(sc.home, '.pi', 'agent', 'skills', 'five-role-team') : null,
-    };
-  }
-  if (harness === 'claude-code') {
-    return { primary: path.join(home, '.claude', 'skills', 'five-role-team'), secondary: null };
-  }
-  throw new Error(`no expected path for harness ${harness}`);
+  if (harness !== 'pi' && harness !== 'claude-code') throw new Error(`no expected path for harness ${harness}`);
+  const cell = { scope: argv.includes('--global') ? 'global' : 'local', harness };
+  return { primary: primaryPath(sc, cell), secondary: secondaryPath(sc, cell) };
 }
 
 function checkUninstall(label, env, rest, paths) {

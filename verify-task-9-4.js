@@ -15,13 +15,11 @@
 const fs = require('fs');
 const path = require('path');
 const { createSandbox } = require(path.join(__dirname, 'verify-sandbox.js'));
+const { copySourceEntries, REPO_ROOT } = require(path.join(__dirname, 'verify-matrix.js'));
 
 const SCRIPT = path.join(__dirname, 'test-uninstall-modes.js');
 const EXPECTED_CELLS = 16;
 const RUN_TIMEOUT_MS = 300000;
-// Same plugin source entries that test-uninstall-modes.js copies.
-const SOURCE_ENTRIES = ['SKILL.md', 'agents', 'pi', 'commands', 'conventions', '.claude-plugin',
-  'install.js', 'install-files.js', 'select-agents.js', 'configure-models.js', 'agent-config.js'];
 
 // The sabotage: uninstallPiSecondary() reports nothing to remove, so the secondary link stays.
 const SABOTAGE_FROM = 'function uninstallPiSecondary(primary, secondary) {\n  if (!secondary) return null;';
@@ -49,10 +47,7 @@ try {
 
   // ---- negative run: a sabotaged uninstall must make the script fail ----
   const broken = path.join(sb.root, 'broken-src');
-  fs.mkdirSync(broken, { recursive: true });
-  for (const name of SOURCE_ENTRIES) {
-    fs.cpSync(path.join(__dirname, name), path.join(broken, name), { recursive: true });
-  }
+  copySourceEntries(REPO_ROOT, broken);
   const installFiles = path.join(broken, 'install-files.js');
   const original = fs.readFileSync(installFiles, 'utf8');
   assert(original.split(SABOTAGE_FROM).length === 2, 'install-files.js contains the uninstallPiSecondary guard exactly once');

@@ -50,21 +50,16 @@
 const fs = require('fs');
 const path = require('path');
 const { createSandbox } = require(path.join(__dirname, 'verify-sandbox.js'));
+const {
+  copyPluginSource, installArgv, primaryPath, piSecondaryPath, cellsFrom, MATRIX, MATRIX_AXES, OVERRIDE, SUBSET,
+} = require(path.join(__dirname, 'verify-matrix.js'));
 
 const SOURCE = process.env.INSTALL_MODES_SOURCE
   ? path.resolve(process.env.INSTALL_MODES_SOURCE)
   : __dirname;
-const SOURCE_ENTRIES = ['SKILL.md', 'agents', 'pi', 'commands', 'conventions', '.claude-plugin',
-  'install.js', 'install-files.js', 'select-agents.js', 'configure-models.js', 'agent-config.js'];
 
-// Axis values used to generate the matrix.
-const MATRIX_AXES = Object.freeze({
-  scope: ['global', 'local'],
-  harness: ['pi', 'claude-code'],
-  mode: ['copy', 'link'],
-  agents: ['all', 'subset'],
-});
-// Independent literal copy, used only by the coverage check.
+// Independent literal copy of the axis values, used only by the coverage check. Kept here on
+// purpose: it must not be derived from verify-matrix.js, or a dropped axis value would go unnoticed.
 const EXPECTED_AXES = Object.freeze({
   scope: ['global', 'local'],
   harness: ['pi', 'claude-code'],
@@ -78,8 +73,6 @@ const SUPPORTED = Object.freeze({
   'claude-code': ['architect', 'designer', 'reviewer', 'supervisor', 'worker'],
   pi: ['architect', 'designer', 'intern', 'reviewer', 'supervisor', 'worker'],
 });
-const SUBSET = Object.freeze(['architect', 'worker', 'reviewer']);
-const OVERRIDE = Object.freeze({ agent: 'worker', model: 'sonnet' });
 
 // Same expansion as configure-models.js MODEL_ALIASES.
 const MODEL_FULL = Object.freeze({
@@ -127,32 +120,6 @@ function sourceDefault(id, src) {
   return v === null ? null : expand(v);
 }
 
-// Copy the plugin source entries into dest. node_modules is linked from this checkout so the
-// `prompts` dependency resolves; it is never taken from the copied source.
-function copyPluginSource(dest) {
-  fs.mkdirSync(dest, { recursive: true });
-  for (const name of SOURCE_ENTRIES) {
-    fs.cpSync(path.join(SOURCE, name), path.join(dest, name), { recursive: true });
-  }
-  fs.symlinkSync(path.join(__dirname, 'node_modules'), path.join(dest, 'node_modules'), 'dir');
-}
-
-function cellsFrom(axes) {
-  const out = [];
-  for (const scope of axes.scope) {
-    for (const harness of axes.harness) {
-      for (const mode of axes.mode) {
-        for (const agents of axes.agents) {
-          out.push({ scope, harness, mode, agents, key: `${scope}/${harness}/${mode}/${agents}` });
-        }
-      }
-    }
-  }
-  return out;
-}
-
-const MATRIX = cellsFrom(MATRIX_AXES);
-
 // Expected model per agent for a cell (override applies only to the "all" cells).
 function expectedModels(cell, expectedAgents, src) {
   const models = {};
@@ -177,22 +144,14 @@ function runCell(sb, cell) {
 
   const sc = sb.scenario(`cell-${cell.key.replace(/\//g, '-')}`);
   const src = path.join(sc.cwd, 'plugin-src');
-  copyPluginSource(src);
+  copyPluginSource(src, SOURCE);
 
-  const argv = [path.join(src, 'install.js'), cell.scope === 'global' ? '--global' : '--local',
-    '--harness', cell.harness];
-  if (cell.mode === 'link') argv.push('--link');
-  if (cell.agents === 'all') argv.push('--agent-models', `${OVERRIDE.agent}=${OVERRIDE.model}`);
-  else argv.push('--agents', SUBSET.join(','));
-
-  const r = sb.run(argv, { home: sc.home, cwd: sc.cwd });
+  const r = sb.run(installArgv(src, cell), { home: sc.home, cwd: sc.cwd });
   need(r.status === 0, `exit 0 (got ${r.status}): ${r.stderr.trim().split('\n').slice(-2).join(' | ')}`);
   need(/^Installation successful/m.test(r.stdout), 'success message printed');
   if (r.status !== 0) return { ok: false, checks, problems };
 
-  const primary = cell.scope === 'global'
-    ? path.join(sc.home, '.claude', 'skills', 'five-role-team')
-    : path.join(sc.cwd, cell.harness === 'pi' ? '.pi' : '.claude', 'skills', 'five-role-team');
+  const primary = primaryPath(sc, cell);
   const pstat = lstat(primary);
   need(pstat !== null, `primary install present at ${primary}`);
 
@@ -206,7 +165,7 @@ function runCell(sb, cell) {
   }
 
   // pi secondary location.
-  const secondary = path.join(sc.home, '.pi', 'agent', 'skills', 'five-role-team');
+  const secondary = piSecondaryPath(sc.home);
   if (cell.scope === 'global' && cell.harness === 'pi') {
     const sst = lstat(secondary);
     need(sst !== null && sst.isSymbolicLink(), 'pi global: ~/.pi/agent/skills/five-role-team is a symlink');

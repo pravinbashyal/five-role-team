@@ -19,6 +19,7 @@
 const fs = require('fs');
 const path = require('path');
 const { createSandbox } = require(path.join(__dirname, 'verify-sandbox.js'));
+const { copyPluginSource, primaryPath, GLOBAL_CLAUDE_CODE } = require(path.join(__dirname, 'verify-matrix.js'));
 
 const INSTALL = path.join(__dirname, 'install.js');
 const sb = createSandbox();
@@ -44,17 +45,6 @@ function unlockAll() {
     const [p, mode] = locks.pop();
     try { fs.chmodSync(p, mode); } catch (err) { /* already gone */ }
   }
-}
-
-// Copy the plugin sources an install needs into a sandbox directory, plus a link
-// to node_modules so `prompts` resolves. The repository itself is not modified.
-function copyPluginSource(dest) {
-  fs.mkdirSync(dest, { recursive: true });
-  for (const name of ['SKILL.md', 'agents', 'pi', 'commands', 'conventions', '.claude-plugin',
-    'install.js', 'install-files.js', 'select-agents.js', 'configure-models.js', 'agent-config.js']) {
-    fs.cpSync(path.join(__dirname, name), path.join(dest, name), { recursive: true });
-  }
-  fs.symlinkSync(path.join(__dirname, 'node_modules'), path.join(dest, 'node_modules'), 'dir');
 }
 
 (async () => {
@@ -119,7 +109,7 @@ function copyPluginSource(dest) {
         copyPluginSource(src);
         const unreadable = path.join(src, 'commands', fs.readdirSync(path.join(src, 'commands')).sort()[0]);
         lock(unreadable, 0o000);
-        const primary = path.join(sc.home, '.claude', 'skills', 'five-role-team');
+        const primary = primaryPath(sc, GLOBAL_CLAUDE_CODE);
         const r = sb.run([path.join(src, 'install.js'), '--global', '--harness', 'claude-code', '--agents', 'worker'],
           { home: sc.home, cwd: sc.cwd });
         const text = r.stdout + r.stderr;
@@ -138,7 +128,7 @@ function copyPluginSource(dest) {
         const src = path.join(sc.cwd, 'plugin-src');
         copyPluginSource(src);
         lock(path.join(src, 'agents', 'worker.md'), 0o000);
-        const primary = path.join(sc.home, '.claude', 'skills', 'five-role-team');
+        const primary = primaryPath(sc, GLOBAL_CLAUDE_CODE);
         const r = sb.run([path.join(src, 'install.js'), '--global', '--harness', 'claude-code', '--agents', 'worker'],
           { home: sc.home, cwd: sc.cwd });
         const text = r.stdout + r.stderr;
@@ -155,7 +145,7 @@ function copyPluginSource(dest) {
     {
       const sc = sb.scenario('closed-stdin');
       sb.enter(sc);
-      const primary = path.join(sc.home, '.claude', 'skills', 'five-role-team');
+      const primary = primaryPath(sc, GLOBAL_CLAUDE_CODE);
       // sb.run passes empty stdin, so the child has no terminal to prompt on.
       const r = sb.run([INSTALL, '--global', '--harness', 'claude-code'], { home: sc.home, cwd: sc.cwd });
       const text = r.stdout + r.stderr;
@@ -171,7 +161,7 @@ function copyPluginSource(dest) {
     {
       const sc = sb.scenario('closed-stdin-flags');
       sb.enter(sc);
-      const primary = path.join(sc.home, '.claude', 'skills', 'five-role-team');
+      const primary = primaryPath(sc, GLOBAL_CLAUDE_CODE);
       const r = sb.run([INSTALL, '--global', '--harness', 'claude-code', '--agents', 'architect', '--agent-models', 'architect=opus'],
         { home: sc.home, cwd: sc.cwd });
       assert(r.status === 0 && fs.existsSync(path.join(primary, '.agent-config.json')),

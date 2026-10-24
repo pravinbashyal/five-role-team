@@ -17,13 +17,11 @@
 const fs = require('fs');
 const path = require('path');
 const { createSandbox } = require(path.join(__dirname, 'verify-sandbox.js'));
+const { copySourceEntries, REPO_ROOT } = require(path.join(__dirname, 'verify-matrix.js'));
 
 const SCRIPT = path.join(__dirname, 'test-install-modes.js');
 const EXPECTED_CELLS = 16;
 const RUN_TIMEOUT_MS = 300000;
-// Same plugin source entries that test-install-modes.js copies.
-const SOURCE_ENTRIES = ['SKILL.md', 'agents', 'pi', 'commands', 'conventions', '.claude-plugin',
-  'install.js', 'install-files.js', 'select-agents.js', 'configure-models.js', 'agent-config.js'];
 
 const sb = createSandbox();
 let failed = 0;
@@ -47,10 +45,7 @@ try {
 
   // ---- negative run: a sabotaged source must make the script fail ----
   const broken = path.join(sb.root, 'broken-src');
-  fs.mkdirSync(broken, { recursive: true });
-  for (const name of SOURCE_ENTRIES) {
-    fs.cpSync(path.join(__dirname, name), path.join(broken, name), { recursive: true });
-  }
+  copySourceEntries(REPO_ROOT, broken);
   fs.rmSync(path.join(broken, 'agents', 'worker.md'));
   assert(!fs.existsSync(path.join(broken, 'agents', 'worker.md')), 'sabotaged copy has agents/worker.md removed');
 

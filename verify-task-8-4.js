@@ -19,6 +19,7 @@
 const fs = require('fs');
 const path = require('path');
 const { createSandbox } = require(path.join(__dirname, 'verify-sandbox.js'));
+const { copyPluginSource, primaryPath, GLOBAL_CLAUDE_CODE } = require(path.join(__dirname, 'verify-matrix.js'));
 
 const sb = createSandbox();
 const CAN_LOCK = !(typeof process.getuid === 'function' && process.getuid() === 0);
@@ -42,17 +43,6 @@ function unlockAll() {
   }
 }
 
-// Copy the plugin sources an install needs into a sandbox directory (same set as
-// verify-task-8-3.js), plus a link to node_modules so `prompts` resolves.
-function copyPluginSource(dest) {
-  fs.mkdirSync(dest, { recursive: true });
-  for (const name of ['SKILL.md', 'agents', 'pi', 'commands', 'conventions', '.claude-plugin',
-    'install.js', 'install-files.js', 'select-agents.js', 'configure-models.js', 'agent-config.js']) {
-    fs.cpSync(path.join(__dirname, name), path.join(dest, name), { recursive: true });
-  }
-  fs.symlinkSync(path.join(__dirname, 'node_modules'), path.join(dest, 'node_modules'), 'dir');
-}
-
 // Sorted list of every entry under dir (relative path plus type), used to prove
 // that a refused run wrote nothing. A missing dir yields an empty list.
 function snapshot(dir) {
@@ -73,7 +63,7 @@ function sameSnapshot(a, b) {
   return a.length === b.length && a.every((v, i) => v === b[i]);
 }
 
-const primaryOf = (home) => path.join(home, '.claude', 'skills', 'five-role-team');
+const primaryOf = (home) => primaryPath({ home }, GLOBAL_CLAUDE_CODE);
 
 (async () => {
   try {

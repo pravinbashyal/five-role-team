@@ -27,6 +27,7 @@
 const fs = require('fs');
 const path = require('path');
 const { createSandbox } = require(path.join(__dirname, 'verify-sandbox.js'));
+const { copyPluginSource, primaryPath, GLOBAL_CLAUDE_CODE } = require(path.join(__dirname, 'verify-matrix.js'));
 
 const README = path.join(__dirname, 'README.md');
 const MODEL_SHORT = {
@@ -54,16 +55,6 @@ function readModel(file) {
   if (!present(file)) return null;
   const m = fs.readFileSync(file, 'utf8').match(/^model:\s*(.+?)\s*$/m);
   return m ? m[1] : null;
-}
-
-// Same copy set as verify-task-9-1.js, plus a link to node_modules for `prompts`.
-function copyPluginSource(dest) {
-  fs.mkdirSync(dest, { recursive: true });
-  for (const name of ['SKILL.md', 'agents', 'pi', 'commands', 'conventions', '.claude-plugin',
-    'install.js', 'install-files.js', 'select-agents.js', 'configure-models.js', 'agent-config.js']) {
-    fs.cpSync(path.join(__dirname, name), path.join(dest, name), { recursive: true });
-  }
-  fs.symlinkSync(path.join(__dirname, 'node_modules'), path.join(dest, 'node_modules'), 'dir');
 }
 
 // A fresh scenario (temp home and cwd) with the plugin source copied into its cwd.
@@ -174,7 +165,7 @@ function expandDefault(v) {
 function checkExample(kind, cmd, idx, a) {
   const label = `[${idx + 1}] ${kind}: ${cmd}`;
   const env = freshSource(`ex-${idx + 1}`);
-  const primary = path.join(env.sc.home, '.claude', 'skills', 'five-role-team');
+  const primary = primaryPath(env.sc, GLOBAL_CLAUDE_CODE);
   const r = runIn(env, [env.script, ...a.rest]);
   assert(r.status === 0 && /^Installation successful/m.test(r.stdout), `${label}: exits 0 with success message (exit ${r.status})`);
   if (r.status !== 0) { console.error(r.stderr.trimEnd()); return; }

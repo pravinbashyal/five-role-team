@@ -37,21 +37,16 @@ const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
 const { createSandbox, REAL_HOME } = require(path.join(__dirname, 'verify-sandbox.js'));
+const {
+  copyPluginSource, installArgv, uninstallArgv, primaryPath, secondaryPath, cellsFrom, MATRIX, MATRIX_AXES,
+} = require(path.join(__dirname, 'verify-matrix.js'));
 
 const SOURCE = process.env.UNINSTALL_MODES_SOURCE
   ? path.resolve(process.env.UNINSTALL_MODES_SOURCE)
   : __dirname;
-const SOURCE_ENTRIES = ['SKILL.md', 'agents', 'pi', 'commands', 'conventions', '.claude-plugin',
-  'install.js', 'install-files.js', 'select-agents.js', 'configure-models.js', 'agent-config.js'];
 
-// Axis values used to generate the matrix.
-const MATRIX_AXES = Object.freeze({
-  scope: ['global', 'local'],
-  harness: ['pi', 'claude-code'],
-  mode: ['copy', 'link'],
-  agents: ['all', 'subset'],
-});
-// Independent literal copy, used only by the coverage check.
+// Independent literal copy of the axis values, used only by the coverage check. Kept here on
+// purpose: it must not be derived from verify-matrix.js, or a dropped axis value would go unnoticed.
 const EXPECTED_AXES = Object.freeze({
   scope: ['global', 'local'],
   harness: ['pi', 'claude-code'],
@@ -59,9 +54,6 @@ const EXPECTED_AXES = Object.freeze({
   agents: ['all', 'subset'],
 });
 const EXPECTED_CELLS = 16;
-
-const SUBSET = Object.freeze(['architect', 'worker', 'reviewer']);
-const OVERRIDE = Object.freeze({ agent: 'worker', model: 'sonnet' });
 
 // Sibling content that must survive uninstall (created in every skills dir the install used).
 const SIB_DIR = 'other-skill';
@@ -150,57 +142,6 @@ function readText(file) {
   try { return fs.readFileSync(file, 'utf8'); } catch (err) { return null; }
 }
 
-function copyPluginSource(dest) {
-  fs.mkdirSync(dest, { recursive: true });
-  for (const name of SOURCE_ENTRIES) {
-    fs.cpSync(path.join(SOURCE, name), path.join(dest, name), { recursive: true });
-  }
-  fs.symlinkSync(path.join(__dirname, 'node_modules'), path.join(dest, 'node_modules'), 'dir');
-}
-
-function cellsFrom(axes) {
-  const out = [];
-  for (const scope of axes.scope) {
-    for (const harness of axes.harness) {
-      for (const mode of axes.mode) {
-        for (const agents of axes.agents) {
-          out.push({ scope, harness, mode, agents, key: `${scope}/${harness}/${mode}/${agents}` });
-        }
-      }
-    }
-  }
-  return out;
-}
-
-const MATRIX = cellsFrom(MATRIX_AXES);
-
-function installArgv(src, cell) {
-  const argv = [path.join(src, 'install.js'), cell.scope === 'global' ? '--global' : '--local',
-    '--harness', cell.harness];
-  if (cell.mode === 'link') argv.push('--link');
-  if (cell.agents === 'all') argv.push('--agent-models', `${OVERRIDE.agent}=${OVERRIDE.model}`);
-  else argv.push('--agents', SUBSET.join(','));
-  return argv;
-}
-
-function uninstallArgv(src, cell) {
-  return [path.join(src, 'install.js'), 'uninstall', cell.scope === 'global' ? '--global' : '--local',
-    '--harness', cell.harness];
-}
-
-function primaryOf(sc, cell) {
-  return cell.scope === 'global'
-    ? path.join(sc.home, '.claude', 'skills', 'five-role-team')
-    : path.join(sc.cwd, cell.harness === 'pi' ? '.pi' : '.claude', 'skills', 'five-role-team');
-}
-
-// pi global only (install.js resolveHarnessPath): the secondary symlink under ~/.pi/agent/skills.
-function secondaryOf(sc, cell) {
-  return cell.scope === 'global' && cell.harness === 'pi'
-    ? path.join(sc.home, '.pi', 'agent', 'skills', 'five-role-team')
-    : null;
-}
-
 // Refuse to uninstall unless HOME and cwd resolve inside this sandbox and not to the real home.
 function assertUninstallSandboxed(sb, sc) {
   for (const p of [sc.home, sc.cwd]) {
@@ -225,7 +166,7 @@ function runCell(sb, cell) {
   const sc = sb.scenario(`uninst-${cell.key.replace(/\//g, '-')}`);
   const scenarioDir = path.dirname(sc.home);
   const src = path.join(sc.cwd, 'plugin-src');
-  copyPluginSource(src);
+  copyPluginSource(src, SOURCE);
   const srcBefore = snapshotTree(src, null);
 
   // ---- install ----
@@ -234,8 +175,8 @@ function runCell(sb, cell) {
   need(/^Installation successful/m.test(ir.stdout), 'install printed the success message');
   if (ir.status !== 0) return { ok: false, checks, problems };
 
-  const primary = primaryOf(sc, cell);
-  const secondary = secondaryOf(sc, cell);
+  const primary = primaryPath(sc, cell);
+  const secondary = secondaryPath(sc, cell);
   const roots = [primary, ...(secondary ? [secondary] : [])];
   const parents = [...new Set(roots.map((r) => path.dirname(r)))];
   need(present(primary), `install created the primary at ${primary}`);
