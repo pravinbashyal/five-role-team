@@ -448,6 +448,55 @@ function removeUninstallCleanupFiles(targetDir) {
 }
 
 /**
+ * Uninstall the primary installation at `target` (task 7.1). The installation
+ * kind is detected without following symlinks and removal follows the design
+ * (Decision 11):
+ * - symlink (`--link` install): only the link is unlinked. The source it points
+ *   at is never followed, read or deleted.
+ * - directory (copy install): the UNINSTALL_CLEANUP_FILES are removed first
+ *   (removeUninstallCleanupFiles, which must only run for copy installs), then
+ *   the directory is removed recursively. Nested symlinks are unlinked, not
+ *   followed.
+ * - nothing at the path: throws (nothing to uninstall).
+ * - any other entry (e.g. a regular file): refused, nothing is removed.
+ *
+ * Safety checks come from checkRemovable: the path must be named
+ * `five-role-team`, must equal `opts.expected` when given, and must neither be
+ * nor contain `opts.sourceDir`. The parent directory is never removed here.
+ *
+ * @param {string} target - Primary installed plugin path (from resolveHarnessPath)
+ * @param {object} [opts] - Same as removeExistingInstall (`sourceDir`, `expected`)
+ * @returns {{kind: 'symlink'|'directory', path: string, linkTarget?: string, cleaned: string[]}}
+ * @throws {Error} with a clear message; nothing is removed on a refusal
+ */
+function uninstallInstall(target, opts = {}) {
+  const checked = checkRemovable(target, opts);
+  if (!checked) {
+    throw new Error(`Nothing to uninstall: no five-role-team installation at ${path.resolve(target)}`);
+  }
+  const { abs, existing } = checked;
+  if (existing.isSymbolicLink()) {
+    const linkTarget = fs.readlinkSync(abs);
+    try {
+      fs.unlinkSync(abs);
+    } catch (err) {
+      throw new Error(`Failed to remove symlink ${abs}: ${err.message}`);
+    }
+    return { kind: 'symlink', path: abs, linkTarget, cleaned: [] };
+  }
+  if (!existing.isDirectory()) {
+    throw new Error(`Refusing to remove ${abs}: not a directory or symlink`);
+  }
+  const cleaned = removeUninstallCleanupFiles(abs);
+  try {
+    fs.rmSync(abs, { recursive: true });
+  } catch (err) {
+    throw new Error(`Failed to remove installation ${abs}: ${err.message}`);
+  }
+  return { kind: 'directory', path: abs, cleaned };
+}
+
+/**
  * Symlink mode installation: create a single symlink at `targetDir` pointing
  * at the plugin source directory (spec: "a symlink is created at
  * ~/.claude/skills/five-role-team/ pointing to the source directory").
@@ -748,6 +797,7 @@ module.exports = {
   writeAgentConfigFile,
   UNINSTALL_CLEANUP_FILES,
   removeUninstallCleanupFiles,
+  uninstallInstall,
   linkInstall,
   ensureDirectory,
   ensureInstallDirectories,

@@ -49,10 +49,13 @@
 
 ## 7. Uninstallation Logic
 
-- [ ] 7.1 Implement `--uninstall` mode that detects copy vs symlink installation and verify both types removed correctly
-- [ ] 7.2 Implement pi dual-location cleanup (remove both main location and symlink) and verify both locations cleaned for pi harness
-- [ ] 7.3 Add safety check that only removes five-role-team directory, not parent skills directory and verify parent preserved after uninstall
-- [ ] 7.4 Implement configuration file removal during uninstall and verify `.agent-config.json` is deleted
+- [ ] 7.1 Implement the `uninstall` subcommand (replacing the `--uninstall` flag, including parsing and `--help` text) that detects copy vs symlink installation and verify both types removed correctly, sandboxed HOME/temp folder only
+- [ ] 7.2 Implement pi dual-location cleanup (remove both main location and symlink) and verify both locations cleaned for pi harness (sandboxed only)
+- [ ] 7.3 Add safety check that only removes five-role-team directory, not parent skills directory and verify parent preserved after uninstall (sandboxed only)
+- [ ] 7.4 Implement configuration file removal during uninstall and verify `.agent-config.json` is deleted (sandboxed only)
+- [ ] 7.5 Remove the `--uninstall` flag everywhere (parser, `--help` text, `test-parse-args.js`/`test-cli-examples.js`, existing verify scripts) so `uninstall` is only a subcommand, and verify `--uninstall` is rejected as an unknown flag (sandboxed only)
+- [ ] 7.6 Make `uninstall` with nothing installed exit 1 with a "Nothing to uninstall" message and remove nothing, and verify (sandboxed only)
+- [ ] 7.7 Add a shared sandbox helper for verify scripts (temp HOME and temp cwd; abort if HOME resolves to the real home directory) and use it in `verify-task-6-2.js`, `6-3`, `7-1` and any later install/uninstall verify script, and verify the guard aborts against a real HOME
 
 ## 8. User Feedback and Validation
 
@@ -66,7 +69,7 @@
 - [ ] 9.1 Update README.md with installation instructions including interactive and non-interactive examples and verify documented commands work as written
 - [ ] 9.2 Add examples for common scenarios (skip designer, custom models, development symlink install) in README and verify each example runs successfully
 - [ ] 9.3 Create manual test script that validates each installation mode (global/local, pi/claude-code, copy/symlink, with/without agents) and verify all modes tested
-- [ ] 9.4 Test uninstallation for each installation mode and verify clean removal in all cases
+- [ ] 9.4 Test uninstallation for each installation mode and verify clean removal in all cases (sandboxed only)
 
 ## Workflow follow-up
 

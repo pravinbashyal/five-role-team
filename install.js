@@ -21,7 +21,9 @@ const prompts = require('prompts');
  * - --harness <name>: Specify harness name or path
  * - --link: Use symlink mode instead of copy
  * - --force: Force overwrite without confirmation
- * - --uninstall: Uninstall instead of install
+ * - uninstall: Subcommand (must be the first argument) that removes the installed
+ *   plugin instead of installing it: `node install.js uninstall --global --harness pi`.
+ *   The old `--uninstall` flag is rejected.
  * - --agents <list>: Comma-separated list of agents (non-interactive mode)
  * - --agent-models <map>: Comma-separated key=value pairs for agent models (non-interactive mode)
  * 
@@ -59,17 +61,25 @@ function parseArgs(argv) {
     errors: []
   };
 
-  for (let i = 0; i < argv.length; i++) {
-    const arg = argv[i];
-    
+  // `uninstall` is a subcommand, so it is only recognised as the first argument
+  // (like `npm uninstall`). The remaining arguments are parsed as usual.
+  let tokens = argv;
+  if (argv[0] === 'uninstall') {
+    parsed.uninstall = true;
+    tokens = argv.slice(1);
+  }
+
+  for (let i = 0; i < tokens.length; i++) {
+    const arg = tokens[i];
+
     if (arg === '--global') {
       parsed.global = true;
     } else if (arg === '--local') {
       parsed.local = true;
     } else if (arg === '--harness') {
       // Get next argument as value. Value is required and must not look like a flag.
-      if (i + 1 < argv.length && !argv[i + 1].startsWith('--')) {
-        parsed.harness = argv[i + 1];
+      if (i + 1 < tokens.length && !tokens[i + 1].startsWith('--')) {
+        parsed.harness = tokens[i + 1];
         i++; // Skip next argument since we consumed it as the harness value
       } else {
         // --harness without a value is an error
@@ -80,11 +90,17 @@ function parseArgs(argv) {
     } else if (arg === '--force') {
       parsed.force = true;
     } else if (arg === '--uninstall') {
-      parsed.uninstall = true;
+      // Replaced by the `uninstall` subcommand. Rejected so it cannot silently
+      // fall through to an install.
+      parsed.errors.push('--uninstall was replaced by the uninstall subcommand (node install.js uninstall --global|--local --harness <name|path>)');
+    } else if (arg === 'uninstall') {
+      // Reached only when `uninstall` is not the first argument (index 0 is
+      // stripped above). Rejected so it cannot silently fall through to an install.
+      parsed.errors.push('uninstall must be the first argument (node install.js uninstall --global|--local --harness <name|path>)');
     } else if (arg === '--agents') {
       // Get next argument as value. Value is required and must not look like a flag.
-      if (i + 1 < argv.length && !argv[i + 1].startsWith('--')) {
-        const agentList = argv[i + 1];
+      if (i + 1 < tokens.length && !tokens[i + 1].startsWith('--')) {
+        const agentList = tokens[i + 1];
         i++; // Skip next argument since we consumed it as the value
         // Parse comma-separated list, trim whitespace, drop empty strings
         parsed.agents = agentList
@@ -97,8 +113,8 @@ function parseArgs(argv) {
       }
     } else if (arg === '--agent-models') {
       // Get next argument as value. Value is required and must not look like a flag.
-      if (i + 1 < argv.length && !argv[i + 1].startsWith('--')) {
-        const modelMap = argv[i + 1];
+      if (i + 1 < tokens.length && !tokens[i + 1].startsWith('--')) {
+        const modelMap = tokens[i + 1];
         i++; // Skip next argument since we consumed it as the value
         // Parse comma-separated key=value pairs
         parsed.agentModels = {};
@@ -280,6 +296,7 @@ Five-Role Team Plugin Installer
 
 USAGE:
   node install.js [OPTIONS]
+  node install.js uninstall --global|--local --harness <name|path>
 
 OPTIONS:
   --help, -h              Show this help message
@@ -296,7 +313,13 @@ OPTIONS:
 
   INSTALLATION MODE:
   --link                  Create symlinks instead of copying files (development mode)
-  --uninstall             Remove installed plugin and cleanup
+
+  UNINSTALL (subcommand, must be the first argument):
+  uninstall               Remove the installed plugin for the given scope and harness.
+                          A copy install is deleted, including .agent-config.json.
+                          A --link install only loses its symlink; the source is never touched.
+                          Exits 1 with "Nothing to uninstall" when nothing is installed.
+                          Uses --global|--local and --harness; other flags are ignored.
 
   INTERACTIVE MODE (default):
   - Prompts for agent selection (architect, designer, worker, reviewer, supervisor, intern)
@@ -326,7 +349,7 @@ EXAMPLES:
   node install.js --global --harness claude-code --link
 
   # Uninstall
-  node install.js --uninstall --global --harness pi
+  node install.js uninstall --global --harness pi
 
 AGENT OPTIONS:
   architect   - Plan-time exploration, captures change artifacts
@@ -397,8 +420,8 @@ async function confirmOverwrite(existing, options = {}) {
 /**
  * Main installation logic: argument validation, agent selection, model
  * configuration, then file installation (copy or --link, pi secondary link,
- * existing-install handling with backup/rollback). Uninstall is handled by a
- * later section.
+ * existing-install handling with backup/rollback). The `uninstall` subcommand
+ * is handled before any prompt and never asks anything.
  *
  * Selection rules:
  * - --agents given: resolveSelectedAgents (non-interactive); otherwise, if
@@ -442,6 +465,29 @@ async function main(argv = args, options = {}) {
     resolveHarnessPath(parsed.harness, parsed.global);
   } catch (err) {
     return fail('Error resolving harness path: ' + err.message);
+  }
+
+  // Uninstall (task 7.1) needs no agent selection or model configuration, so it
+  // branches here, before any prompt, and never asks anything.
+  if (parsed.uninstall) {
+    try {
+      const resolved = resolveHarnessPath(parsed.harness, parsed.global);
+      const removed = uninstallInstall(resolved.primary, { sourceDir, expected: resolved.primary });
+      if (removed.kind === 'symlink') {
+        log('Removed symlink ' + removed.path + ' -> ' + removed.linkTarget);
+        log('Source directory ' + removed.linkTarget + ' was left untouched.');
+      } else {
+        removed.cleaned.forEach(file => log('Removed ' + file));
+        log('Removed installation at ' + removed.path);
+      }
+      // Temporary until task 7.2 (pi dual-location cleanup) removes it.
+      if (resolved.secondary && fs.lstatSync(resolved.secondary, { throwIfNoEntry: false })) {
+        log('Note: the pi secondary location ' + resolved.secondary + ' was not removed by this uninstall step.');
+      }
+    } catch (err) {
+      return fail('Error: ' + err.message);
+    }
+    return result;
   }
 
   const hasModelFlag = Object.keys(parsed.agentModels).length > 0;
@@ -492,8 +538,7 @@ async function main(argv = args, options = {}) {
   log('Selected agents and models:');
   result.selectedAgents.forEach(id => log('  ' + id + ': ' + result.models[id]));
 
-  // File installation (section 5). Uninstall is handled by a later section.
-  if (parsed.uninstall) return result;
+  // File installation (section 5). Uninstall returned earlier.
   // Rollback state: only what THIS run creates is ever removed on failure.
   // A confirmed/--force overwrite moves the old install aside to a hidden
   // sibling first; on failure it is restored, on success it is deleted.
@@ -595,7 +640,7 @@ const {
   promptAgentSelection,
   resolveSelectedAgents,
 } = require('./select-agents');
-const { ensureInstallDirectories, buildInstallSet, copyInstall, writeAgentConfigFile, linkInstall, linkSecondary, detectExistingInstall, detectSecondaryConflict, moveAsideExistingInstall, discardBackup, rollbackInstall } = require('./install-files');
+const { ensureInstallDirectories, buildInstallSet, copyInstall, writeAgentConfigFile, linkInstall, linkSecondary, detectExistingInstall, detectSecondaryConflict, moveAsideExistingInstall, discardBackup, rollbackInstall, uninstallInstall } = require('./install-files');
 const { buildAgentConfig } = require('./agent-config');
 const {
   validateModel,
