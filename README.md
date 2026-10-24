@@ -46,6 +46,65 @@ claude plugin install five-role-team@five-role-team
 
 Then point a project's own `CLAUDE.md` at **`/five-role-team:apply`**, not just at the skill by name — see "Getting this skill to actually load" in `SKILL.md`. A CLAUDE.md pointer to the skill alone is unreliable: skills only take effect when invoked, and a plain `/opsx:apply` loads its own instructions directly without first triggering this one. The `/five-role-team:apply` command is the deterministic fix.
 
+## Installation
+
+`install.js` copies (or links) the plugin into a harness's skills directory and lets you choose which agents to include and which model each one uses. Run it from a five-role-team checkout: the script refuses to run from any directory that does not contain `.claude-plugin/plugin.json`.
+
+### Prerequisites
+
+- Node.js 14 or newer.
+- `npm install` once in the checkout. It installs `prompts`, which the interactive prompts use.
+
+### Options
+
+- `--global` or `--local` (one is required): install to the global skills directory (`~/.claude/skills/` or `~/.pi/agent/skills/`) or to the project's skills directory (`./.claude/skills/` or `./.pi/skills/`).
+- `--harness <name|path>` (required): `pi`, `claude-code`, or a custom skills directory path.
+- `--link`: symlink the checkout instead of copying files (development mode).
+- `--force`: replace an existing installation without asking.
+- `--agents <list>`: comma-separated agents to install, e.g. `architect,worker,reviewer`.
+- `--agent-models <map>`: comma-separated `agent=model` pairs, e.g. `"worker=sonnet,reviewer=opus"`. Short names are `opus`, `sonnet` and `haiku`; a name containing `/` is used as-is.
+
+Uninstall is a subcommand, not a flag: `node install.js uninstall --global --harness <name|path>`.
+
+### Interactive
+
+With neither `--agents` nor `--agent-models`, the script asks which agents to include, then the model for each selected agent. Press Enter at a model prompt to keep its default. This needs a terminal: without one, the script exits 1 and suggests the flags.
+
+```bash
+node install.js --global --harness pi
+```
+
+### Non-interactive
+
+Either flag skips the prompts. `--agents` picks the agents and keeps their default models. `--agent-models` overrides models; without `--agents`, every agent the harness supports is installed.
+
+```bash
+node install.js --global --harness pi --agents architect,worker,reviewer,supervisor --agent-models "worker=sonnet"
+```
+
+Symlink install for development. In `--link` mode the install points at the checkout, so the agent and model choices are not applied and no `.agent-config.json` is written.
+
+```bash
+node install.js --global --harness claude-code --link --agents architect,worker,reviewer,supervisor
+```
+
+### Uninstall
+
+```bash
+node install.js uninstall --global --harness pi
+```
+
+A copy install is deleted, including `.agent-config.json`. A `--link` install loses only its symlink; the checkout is never touched. For `pi`, the `~/.pi/agent/skills/` symlink is removed too. With nothing installed, the command exits 1 with "Nothing to uninstall".
+
+### Harness notes
+
+- **`pi`** installs to `~/.claude/skills/five-role-team` and adds a symlink at `~/.pi/agent/skills/five-role-team` pointing to it. `intern` is pi-only: it is disabled in the prompt and rejected by `--agents` for other harnesses.
+- **`claude-code`** installs to `~/.claude/skills/five-role-team` and leaves out the pi-only files.
+- **A custom path** installs to `<path>/five-role-team`.
+- **`--local`** installs into the current directory, so run it from the project root.
+- Copy installs write `.agent-config.json` next to the plugin, recording the agents and models. `--link` installs write none.
+- Re-running over an existing installation asks before replacing it. Without a terminal it exits 1, so pass `--force` in scripts.
+
 ## Why a plugin instead of copy-pasting the agent files
 
 The three agent personas alone aren't the whole system — the dispatch loop (record base SHA, one task at a time, re-review exceptions, section gating, escalation rules) lived in a single project's `CLAUDE.md` prose. Packaging it as a skill means installing this plugin gives a new project the whole protocol, not just personas that still need a hand-copied `CLAUDE.md` section.
