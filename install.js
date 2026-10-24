@@ -315,7 +315,7 @@ OPTIONS:
   --help, -h              Show this help message
 
   INSTALLATION SCOPE (required, mutually exclusive):
-  --global                Install to global skills directory (~/.claude/skills/ or ~/.pi/agent/skills/)
+  --global                Install to global skills directory (~/.claude/skills/; pi also symlinks from ~/.pi/agent/skills/)
   --local                 Install to local project skills directory (./.claude/skills/ or ./.pi/skills/)
 
   HARNESS (required):
