@@ -531,7 +531,19 @@ async function main(argv = args, options = {}) {
   if (parsed.errors.length > 0) {
     return fail('Error parsing arguments:', ...parsed.errors.map(err => '  - ' + err));
   }
-  
+
+  // The plugin source (the directory install.js sits in) must be a five-role-team
+  // plugin directory (task 8.4). Checked before any prompt or write. Uninstall copies
+  // nothing from the source and only uses it for the removal safety check, so a
+  // missing manifest does not block uninstall.
+  if (!parsed.uninstall) {
+    try {
+      validatePluginSource(sourceDir);
+    } catch (err) {
+      return fail('Error: ' + err.message);
+    }
+  }
+
   // Validate the harness resolves before asking anything (missing --harness is
   // already rejected by parseArgs).
   try {
@@ -776,7 +788,7 @@ const {
   promptAgentSelection,
   resolveSelectedAgents,
 } = require('./select-agents');
-const { ensureInstallDirectories, buildInstallSet, copyInstall, writeAgentConfigFile, linkInstall, linkSecondary, detectExistingInstall, detectSecondaryConflict, moveAsideExistingInstall, discardBackup, rollbackInstall, uninstallInstall, uninstallPiSecondary, describeFsError } = require('./install-files');
+const { ensureInstallDirectories, buildInstallSet, copyInstall, writeAgentConfigFile, linkInstall, linkSecondary, detectExistingInstall, detectSecondaryConflict, moveAsideExistingInstall, discardBackup, rollbackInstall, uninstallInstall, uninstallPiSecondary, describeFsError, validatePluginSource } = require('./install-files');
 const { buildAgentConfig } = require('./agent-config');
 const {
   validateModel,

@@ -217,6 +217,40 @@ function buildInstallSet(sourceDir, selectedAgents, harness) {
   return entries;
 }
 
+/**
+ * Check that the plugin source directory is a five-role-team plugin directory
+ * (task 8.4): `.claude-plugin/plugin.json` must exist there as a readable regular
+ * file. Pure read-only check, so it is safe to run before any prompt or write.
+ *
+ * @param {string} sourceDir - Plugin source root (the directory install.js sits in)
+ * @throws {Error} with a clear message naming the expected file and the directory checked
+ */
+function validatePluginSource(sourceDir) {
+  if (typeof sourceDir !== 'string' || sourceDir.trim().length === 0) {
+    throw new Error('Plugin source directory is required');
+  }
+  const root = path.resolve(sourceDir);
+  const manifest = path.join(root, '.claude-plugin', 'plugin.json');
+  const notFound = `Not a five-role-team plugin directory: .claude-plugin/plugin.json not found in ${root}. ` +
+    'Run install.js from the five-role-team directory (the one that contains .claude-plugin/plugin.json).';
+
+  let st;
+  try {
+    st = fs.statSync(manifest);
+  } catch (err) {
+    if (err.code === 'ENOENT' || err.code === 'ENOTDIR') throw new Error(notFound);
+    throw new Error(`Cannot access ${manifest}: ${describeFsError(err)}`);
+  }
+  if (!st.isFile()) {
+    throw new Error(`Not a five-role-team plugin directory: ${manifest} is not a file (checked in ${root})`);
+  }
+  try {
+    fs.accessSync(manifest, fs.constants.R_OK);
+  } catch (err) {
+    throw new Error(`Cannot read ${manifest}: ${describeFsError(err)}`);
+  }
+}
+
 function collectTree(root, rel, entries) {
   const abs = path.join(root, rel);
   let stat;
@@ -932,5 +966,6 @@ module.exports = {
   ensureDirectory,
   ensureInstallDirectories,
   buildInstallSet,
+  validatePluginSource,
   applyModelToFrontmatter,
 };
