@@ -81,7 +81,7 @@ try {
 
   // 4. Global install via the command.
   const gScn = sb.scenario('globalinit');
-  const gCmd = runBin(bin, ['init', '--global', '--harness', 'claude-code'], {
+  const gCmd = runBin(bin, ['init', '--global', '--harness', 'claude-code', '--agents', 'architect,worker,reviewer', '--agent-models', 'worker=sonnet'], {
     home: gScn.home, cwd: gScn.cwd,
   });
   assert(gCmd.status === 0, `five-role-team init --global --harness claude-code exits 0 (got ${gCmd.status})`);
@@ -90,7 +90,7 @@ try {
 
   // 5. Project (local) install via the command.
   const pScn = sb.scenario('projectinit');
-  const pCmd = runBin(bin, ['init', '--harness', 'claude-code'], {
+  const pCmd = runBin(bin, ['init', '--harness', 'claude-code', '--agents', 'architect,worker,reviewer', '--agent-models', 'worker=sonnet'], {
     home: pScn.home, cwd: pScn.cwd,
   });
   assert(pCmd.status === 0, `five-role-team init --harness claude-code exits 0 (got ${pCmd.status})`);
