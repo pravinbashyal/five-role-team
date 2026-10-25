@@ -12,7 +12,9 @@
 // Sandbox part, against the packed tarball:
 //   - `npm pack` the repo into the sandbox, `npm install -g <tarball>` into a temp prefix
 //   - in a temp project with `.claude/`, run `five-role-team init --default` (stdin not a TTY)
-//     and expect exit 0, the plugin under ./.claude/skills/five-role-team/ and "Next steps:"
+//     and expect exit 0, the plugin under ./.claude/skills/five-role-team/ (with
+//     .claude-plugin/plugin.json and non-empty agents/ and commands/), and output that
+//     ends with the "Next steps:" block
 //   - run the documented `five-role-team uninstall --local --harness claude-code` and expect
 //     the install directory to be gone
 //
@@ -123,9 +125,21 @@ function sandboxChecks() {
     // five-role-team init --default, standing in for the interactive run (stdin not a TTY).
     const init = sb.run([bin, 'init', '--default'], { cwd: project, timeout: NPM_TIMEOUT_MS });
     assert(init.status === 0, `five-role-team init --default exits 0 (got ${init.status}; ${init.stderr.trim()})`);
-    const plugin = path.join(project, '.claude', 'skills', 'five-role-team', '.claude-plugin', 'plugin.json');
+    const pluginDir = path.join(project, '.claude', 'skills', 'five-role-team');
+    const plugin = path.join(pluginDir, '.claude-plugin', 'plugin.json');
     assert(fs.existsSync(plugin), 'plugin installed under ./.claude/skills/five-role-team/');
-    assert(init.stdout.includes('Next steps:'), 'init --default output includes a "Next steps" block');
+    for (const dir of ['agents', 'commands']) {
+      const p = path.join(pluginDir, dir);
+      const populated = fs.existsSync(p) && fs.statSync(p).isDirectory() && fs.readdirSync(p).length > 0;
+      assert(populated, `plugin includes a non-empty ${dir}/ directory`);
+    }
+    // The Next steps block is the last thing printed: its header line is followed
+    // only by numbered items until the end of the output.
+    const outLines = init.stdout.replace(/\n+$/, '').split('\n');
+    const nextIdx = outLines.lastIndexOf('Next steps:');
+    const afterNext = nextIdx === -1 ? [] : outLines.slice(nextIdx + 1);
+    assert(nextIdx !== -1 && afterNext.length > 0 && afterNext.every((l) => /^\s+\d+\. /.test(l)),
+      'init --default output ends with the "Next steps" block (header, then only numbered items)');
 
     // The documented uninstall command removes the install.
     const uninstall = sb.run([bin, 'uninstall', '--local', '--harness', 'claude-code'], {

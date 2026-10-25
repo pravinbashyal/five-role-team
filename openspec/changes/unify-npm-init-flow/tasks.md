@@ -91,7 +91,7 @@
 
 ## 6. Integration check
 
-- [ ] 6.1 End-to-end check against the packed tarball:
+- [x] 6.1 End-to-end check against the packed tarball:
   - `npm pack`, then install it globally into a temp prefix with a temp HOME.
   - In a temp project containing `.claude/`, run `five-role-team init --default`. Confirm `./.claude/skills/five-role-team/.claude-plugin/plugin.json`, `agents/` and `commands/` exist, and that the output ends with "Next steps".
   - Run `five-role-team uninstall --local --harness claude-code` and confirm the directory is gone.
