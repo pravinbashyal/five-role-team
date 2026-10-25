@@ -400,7 +400,7 @@ AGENT OPTIONS:
   worker      - Implements tasks
   reviewer    - Audits worker diffs
   supervisor  - Composition audit, interaction gate
-  intern      - Menial chores for other agents (pi harness only)
+  intern      - Menial chores for other agents
 
 MODEL SHORT NAMES:
   opus        - anthropic/claude-opus-4-5-20251101
@@ -747,16 +747,13 @@ async function main(argv = args, options = {}) {
     // Agent selection (section 3)
     let selectedAgents;
     if (parsed.agents !== null || hasModelFlag) {
-      const resolution = resolveSelectedAgents({ agents: parsed.agents, harness: parsed.harness });
+      const resolution = resolveSelectedAgents({ agents: parsed.agents });
       if (resolution.errors.length > 0) {
         return fail(...resolution.errors.map(msg => 'Error: ' + msg));
       }
       selectedAgents = resolution.selectedAgents;
     } else {
-      selectedAgents = await promptAgentSelection({
-        ...promptsOption,
-        choiceOptions: { harness: parsed.harness }
-      });
+      selectedAgents = await promptAgentSelection(promptsOption);
       if (selectedAgents === null) return cancel();
     }
 

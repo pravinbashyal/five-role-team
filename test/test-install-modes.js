@@ -14,8 +14,8 @@
 // Agent axis. Without --agents the agent prompt runs, and without --agent-models the model
 // prompt runs too. stdin is never a TTY here, so either prompt would fail. So:
 //   - "all": `--agent-models worker=sonnet` with NO --agents. A model map skips both prompts,
-//     and with no --agents resolveSelectedAgents() selects every agent the harness supports
-//     (intern only for pi). worker=sonnet is a real override, so the model path is exercised.
+//     and with no --agents resolveSelectedAgents() selects every agent.
+//     worker=sonnet is a real override, so the model path is exercised.
 //   - "subset": `--agents architect,worker,reviewer` (source model defaults, no prompts).
 //
 // Layout checked per cell:
@@ -68,9 +68,9 @@ const EXPECTED_AXES = Object.freeze({
 });
 const EXPECTED_CELLS = 16;
 
-// Agents installed for "all" (every agent the harness supports) and for "subset".
+// Agents installed for "all" (every agent) and for "subset".
 const SUPPORTED = Object.freeze({
-  'claude-code': ['architect', 'designer', 'reviewer', 'supervisor', 'worker'],
+  'claude-code': ['architect', 'designer', 'intern', 'reviewer', 'supervisor', 'worker'],
   pi: ['architect', 'designer', 'intern', 'reviewer', 'supervisor', 'worker'],
 });
 

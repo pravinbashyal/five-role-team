@@ -22,9 +22,9 @@ The script SHALL prompt the user to select which agents to include in their inst
 - **WHEN** user confirms default selection without changes
 - **THEN** all agents are installed
 
-#### Scenario: Intern agent requires pi harness
-- **WHEN** user selects intern agent but harness is not pi
-- **THEN** script displays warning that intern requires pi and prompts to deselect intern or change harness
+#### Scenario: Intern agent is selectable for every harness
+- **WHEN** user selects intern agent with `--harness claude-code` (or any other harness)
+- **THEN** `agents/intern.md` is installed and configuration file includes intern, with no warning or rejection
 
 ### Requirement: Configure model for each agent
 

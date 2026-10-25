@@ -13,7 +13,7 @@ Before any of that, plan time has its own order: a `designer` role (Opus, read-o
 - `agents/worker.md` (Haiku) — implements exactly one task at a time, never marks its own work done
 - `agents/reviewer.md` — audits a worker's diff with fresh context, never implements
 - `agents/supervisor.md` — audits a completed multi-task section's composition, and (once per change, only when the change's specs carry `[interaction]`-tagged scenarios) gates the change's implementation against them; never implements
-- `agents/intern.md` — pi-only helper outside the role model: handles menial chores for other agents (file lookups, boilerplate edits, mechanical cleanups) and delegates small code-writing chores to a local `qwen2.5-coder:7b`; makes no design or review decisions
+- `agents/intern.md` — helper outside the role model: handles menial chores for other agents (file lookups, boilerplate edits, mechanical cleanups) and delegates small code-writing chores to a local `qwen2.5-coder:7b`; makes no design or review decisions
 - `SKILL.md` (this plugin's root skill, `five-role-team`) — the orchestrator's dispatch-loop protocol; overrides step 6 of the `openspec-apply-change` skill's default "implement inline" behavior
 - `commands/explore.md` (`/five-role-team:explore [topic]`) — judges interaction-relevance and, when it applies, dispatches `designer` (Opus) before dispatching `architect` (Opus) for exploration/planning, instead of running explore mode inline in the main session's model
 - `commands/apply.md` (`/five-role-team:apply [change-name]`) — the reliable entry point; loads the protocol and the OpenSpec apply steps together in one turn instead of hoping the skill gets triggered on its own
@@ -150,7 +150,7 @@ A copy install is deleted, including `.agent-config.json`. A `--link` install lo
 
 ### Harness notes
 
-- **`pi`** installs to `~/.claude/skills/five-role-team` and adds a symlink at `~/.pi/agent/skills/five-role-team` pointing to it. `intern` is pi-only: it is disabled in the prompt and rejected by `--agents` for other harnesses.
+- **`pi`** installs to `~/.claude/skills/five-role-team` and adds a symlink at `~/.pi/agent/skills/five-role-team` pointing to it.
 - **`claude-code`** installs to `~/.claude/skills/five-role-team` and leaves out the pi-only files.
 - **A custom path** installs to `<path>/five-role-team`.
 - **`--local`** installs into the current directory, so run it from the project root.

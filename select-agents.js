@@ -3,36 +3,8 @@
 const path = require('path');
 const defaultPrompts = require('prompts');
 
-const INTERN_AGENT_ID = 'intern';
-const INTERN_REQUIRES_PI_WARNING =
-  'Warning: Intern agent requires the pi harness.';
-const INTERN_REQUIRES_PI_PROMPT =
-  'Deselect intern or change the harness to pi (or a custom path that includes .pi).';
-
 /**
- * Full warning shown when intern is selected with a non-pi harness.
- * @returns {string}
- */
-function formatInternRequiresPiMessage() {
-  return `${INTERN_REQUIRES_PI_WARNING} ${INTERN_REQUIRES_PI_PROMPT}`;
-}
-
-/**
- * Whether the selected agent list includes intern on a harness that does not support it.
- *
- * @param {string[]} agents - Selected agent ids
- * @param {string|null|undefined} harness - Harness from `--harness`
- * @returns {boolean}
- */
-function selectionIncludesInvalidIntern(agents, harness) {
-  if (!Array.isArray(agents) || !agents.includes(INTERN_AGENT_ID)) {
-    return false;
-  }
-  return !isPiHarness(harness);
-}
-
-/**
- * Whether the install target harness supports the intern agent (design Decision 3 / 6).
+ * Whether the install target harness is pi (pi-only files such as pi/agents/ are installed only for pi).
  *
  * @param {string|null|undefined} harness - Harness name or path from `--harness`
  * @returns {boolean}
@@ -83,7 +55,7 @@ const AGENT_CATALOG = Object.freeze([
   },
   {
     id: 'intern',
-    description: 'pi-only: menial chores for other agents',
+    description: 'menial chores for other agents',
   },
 ]);
 
@@ -97,47 +69,21 @@ function formatAgentChoiceTitle(agent) {
 }
 
 /**
- * Agent ids available for the given harness (excludes intern when harness is not pi).
- *
- * @param {string|null|undefined} harness
- * @returns {string[]}
- */
-function getAvailableAgentsForHarness(harness) {
-  const internAllowed = harness === undefined || harness === null ? true : isPiHarness(harness);
-  return AGENT_CATALOG.filter(
-    (agent) => agent.id !== INTERN_AGENT_ID || internAllowed
-  ).map((agent) => agent.id);
-}
-
-/**
  * Build prompts multiselect `choices` for agent selection.
  * Exported for verification without a TTY.
  *
  * @param {object} [options]
- * @param {boolean} [options.selectAllAvailable=true] - Pre-select every agent available for the harness
- * @param {string} [options.harness] - When set and not pi, intern choice is disabled
- * @returns {Array<{ title: string, value: string, selected?: boolean, disabled?: boolean }>}
+ * @param {boolean} [options.selectAllAvailable=true] - Pre-select every agent
+ * @returns {Array<{ title: string, value: string, selected: boolean }>}
  */
 function buildAgentSelectChoices(options = {}) {
-  const { selectAllAvailable = true, harness } = options;
-  const internAllowed = harness === undefined ? true : isPiHarness(harness);
-  const defaultSelected = selectAllAvailable
-    ? new Set(getAvailableAgentsForHarness(harness))
-    : new Set();
+  const { selectAllAvailable = true } = options;
 
-  return AGENT_CATALOG.map((agent) => {
-    const choice = {
-      title: formatAgentChoiceTitle(agent),
-      value: agent.id,
-    };
-    if (agent.id === INTERN_AGENT_ID && !internAllowed) {
-      choice.disabled = true;
-      choice.selected = false;
-    } else {
-      choice.selected = defaultSelected.has(agent.id);
-    }
-    return choice;
-  });
+  return AGENT_CATALOG.map((agent) => ({
+    title: formatAgentChoiceTitle(agent),
+    value: agent.id,
+    selected: selectAllAvailable,
+  }));
 }
 
 /**
@@ -171,17 +117,16 @@ const KNOWN_AGENT_IDS = new Set(AGENT_CATALOG.map((agent) => agent.id));
  * Resolve agent selection for non-interactive `--agents` (and future interactive default path).
  *
  * @param {object} options
- * @param {string[]|null|undefined} options.agents - Parsed `--agents` list; null/undefined means not provided (interactive)
- * @param {string|null|undefined} options.harness - Harness from `--harness`
+ * @param {string[]|null|undefined} options.agents - Parsed `--agents` list; null/undefined means not provided (every agent is selected)
  * @returns {{ selectedAgents: string[]|null, errors: string[] }}
  */
 function resolveSelectedAgents(options = {}) {
-  const { agents, harness } = options;
+  const { agents } = options;
   const errors = [];
 
   if (agents === null || agents === undefined) {
     return {
-      selectedAgents: getAvailableAgentsForHarness(harness),
+      selectedAgents: AGENT_CATALOG.map((agent) => agent.id),
       errors,
     };
   }
@@ -228,50 +173,29 @@ function resolveSelectedAgents(options = {}) {
     return { selectedAgents: null, errors };
   }
 
-  if (selectionIncludesInvalidIntern(selectedAgents, harness)) {
-    errors.push(formatInternRequiresPiMessage());
-    return { selectedAgents: null, errors };
-  }
-
   return { selectedAgents, errors };
 }
 
 async function promptAgentSelection(options = {}) {
   const promptsImpl = options.promptsImpl || defaultPrompts;
   const choiceOptions = options.choiceOptions || {};
-  const harness = choiceOptions.harness;
-  const warn = options.warn || ((message) => console.warn(message));
 
-  for (;;) {
-    const question = buildAgentSelectPromptQuestion(choiceOptions);
+  const response = await promptsImpl(buildAgentSelectPromptQuestion(choiceOptions), {
+    onCancel: () => true,
+  });
 
-    const response = await promptsImpl(question, {
-      onCancel: () => true,
-    });
-
-    if (!response || !Array.isArray(response.agents)) {
-      return null;
-    }
-
-    if (selectionIncludesInvalidIntern(response.agents, harness)) {
-      warn(formatInternRequiresPiMessage());
-      continue;
-    }
-
-    return response.agents;
+  if (!response || !Array.isArray(response.agents)) {
+    return null;
   }
+
+  return response.agents;
 }
 
 module.exports = {
   AGENT_CATALOG,
   KNOWN_AGENT_IDS,
-  INTERN_REQUIRES_PI_WARNING,
-  INTERN_REQUIRES_PI_PROMPT,
   isPiHarness,
-  getAvailableAgentsForHarness,
   formatAgentChoiceTitle,
-  formatInternRequiresPiMessage,
-  selectionIncludesInvalidIntern,
   buildAgentSelectChoices,
   buildAgentSelectPromptQuestion,
   resolveSelectedAgents,
