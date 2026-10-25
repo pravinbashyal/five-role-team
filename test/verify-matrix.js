@@ -71,9 +71,10 @@ const MATRIX = cellsFrom(MATRIX_AXES);
 // Scope and harness of the global claude-code install (the common primary location).
 const GLOBAL_CLAUDE_CODE = Object.freeze({ scope: 'global', harness: 'claude-code' });
 
-// argv for `install.js` in a cell. `src` is the plugin source directory that holds install.js.
+// argv for `install.js init` in a cell (the bare form and the `install` alias no longer install).
+// `src` is the plugin source directory that holds install.js.
 function installArgv(src, cell) {
-  const argv = [path.join(src, 'install.js'), cell.scope === 'global' ? '--global' : '--local',
+  const argv = [path.join(src, 'install.js'), 'init', cell.scope === 'global' ? '--global' : '--local',
     '--harness', cell.harness];
   if (cell.mode === 'link') argv.push('--link');
   if (cell.agents === 'all') argv.push('--agent-models', `${OVERRIDE.agent}=${OVERRIDE.model}`);

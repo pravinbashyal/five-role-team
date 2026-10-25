@@ -21,12 +21,16 @@ const prompts = require('prompts');
  * - --harness <name>: Specify harness name or path
  * - --link: Use symlink mode instead of copy
  * - --force: Force overwrite without confirmation
+ * - --default: Install the default setup with no setup questions (parsed here; behaviour in task 2.1)
+ * - --verbose: Print per-directory copy lines (parsed here; behaviour in task 4.1)
+ * - init: Subcommand (must be the first argument) that installs. Scope defaults to local.
  * - uninstall: Subcommand (must be the first argument) that removes the installed
- *   plugin instead of installing it: `node install.js uninstall --global --harness pi`.
+ *   plugin instead of installing it: `five-role-team uninstall --global --harness pi`.
  *   `--uninstall` is not a flag: it is rejected as an unknown flag.
+ *   `install` is no longer an alias: it is rejected as an unknown argument.
  * - --agents <list>: Comma-separated list of agents (non-interactive mode)
  * - --agent-models <map>: Comma-separated key=value pairs for agent models (non-interactive mode)
- * 
+ *
  * @param {string[]} argv - Arguments array (without 'node' and script name)
  * @returns {object} Parsed arguments object with boolean properties and harness value:
  *   - global: boolean
@@ -34,7 +38,10 @@ const prompts = require('prompts');
  *   - harness: string or null
  *   - link: boolean
  *   - force: boolean
+ *   - defaultSetup: boolean
+ *   - verbose: boolean
  *   - uninstall: boolean
+ *   - init: boolean
  *   - agents: array or null (null if not provided, empty array if provided but empty)
  *   - agentModels: object (empty object {} if not provided). Values preserve any '=' characters.
  *   - errors: array of error messages
@@ -55,6 +62,8 @@ function parseArgs(argv) {
     harness: null,
     link: false,
     force: false,
+    defaultSetup: false,
+    verbose: false,
     uninstall: false,
     init: false,
     agents: null,
@@ -62,15 +71,13 @@ function parseArgs(argv) {
     errors: []
   };
 
-  // `init`, `install` (alias) and uninstall are optional subcommands, so they
-  // are only recognised as the first argument. `init` installs into the current
-  // project directory (local scope by default, `--global` overrides); `install`
-  // is an alias. The bare form (no subcommand) still installs as before.
+  // `init` and `uninstall` are the only subcommands, and they are only recognised
+  // as the first argument. `init` installs into the current project directory
+  // (local scope by default, `--global` overrides). With no subcommand nothing is
+  // installed: main() prints usage instead.
   let tokens = argv;
   if (argv[0] === 'init') {
     parsed.init = true;
-    tokens = argv.slice(1);
-  } else if (argv[0] === 'install') {
     tokens = argv.slice(1);
   } else if (argv[0] === 'uninstall') {
     parsed.uninstall = true;
@@ -97,13 +104,20 @@ function parseArgs(argv) {
       parsed.link = true;
     } else if (arg === '--force') {
       parsed.force = true;
+    } else if (arg === '--default') {
+      parsed.defaultSetup = true;
+    } else if (arg === '--verbose') {
+      parsed.verbose = true;
     } else if (arg === '--help' || arg === '-h') {
       // Handled before parsing (see the early --help check); accepted here so it
       // is not reported as an unknown flag.
     } else if (arg === 'uninstall') {
       // Reached only when uninstall is not the first argument (index 0 is
       // stripped above). Rejected so it cannot silently fall through to an install.
-      parsed.errors.push('uninstall must be the first argument (node install.js uninstall --global|--local --harness <name|path>)');
+      parsed.errors.push('uninstall must be the first argument (five-role-team uninstall --global|--local --harness <name|path>)');
+    } else if (arg === 'install') {
+      // The install alias was removed; install is now only `init`.
+      parsed.errors.push('Unknown argument: install (the install command was removed; use "five-role-team init" to install, see "five-role-team --help")');
     } else if (arg === '--agents') {
       // Get next argument as value. Value is required and must not look like a flag.
       if (i + 1 < tokens.length && !tokens[i + 1].startsWith('--')) {
@@ -151,12 +165,12 @@ function parseArgs(argv) {
       // Any other flag-looking token is unknown. Rejected rather than ignored so a
       // removed or mistyped flag (e.g. the old --uninstall) cannot silently run
       // an install with the flag dropped.
-      parsed.errors.push(`Unknown flag: ${arg} (run "node install.js --help" for usage)`);
+      parsed.errors.push(`Unknown flag: ${arg} (run "five-role-team --help" for usage)`);
     } else {
       // Any bare token that is not a recognised flag, a consumed flag value, or the
       // leading uninstall (e.g. a typo such as `uninstal`) is an error. The grammar
       // has no other positional arguments, so it must not silently fall through to an install.
-      parsed.errors.push(`Unknown argument: ${arg} (run "node install.js --help" for usage)`);
+      parsed.errors.push(`Unknown argument: ${arg} (run "five-role-team --help" for usage)`);
     }
   }
 
@@ -325,34 +339,55 @@ if (args.includes('--help') || args.includes('-h')) {
 }
 
 /**
- * Display usage information
+ * Display usage information. Every line names `five-role-team`; only the `init`
+ * and `uninstall` subcommands are listed.
+ *
+ * @param {function} [write] - Line writer (default console.log). Used by main()
+ *   so usage printed on a failed run can go to stderr.
  */
-function showUsage() {
-  console.log(`
+function showUsage(write = console.log) {
+  write(`
 Five-Role Team Plugin Installer
 
 USAGE:
-  node install.js [init|install] [OPTIONS]
-  node install.js init [OPTIONS]        Install into current project (local scope by default; --global overrides)
-  node install.js install [OPTIONS]     Same as the bare form; prompts for scope if omitted
-  node install.js [OPTIONS]            Bare form (installs; prompts for missing scope/harness on a TTY, fails with a hint without one)
-  node install.js uninstall --global|--local --harness <name|path>
+  five-role-team init [OPTIONS]              Install into this project (asks Default or Custom first on a terminal)
+  five-role-team init --default [OPTIONS]    Install the default setup with no questions
+  five-role-team uninstall --global|--local --harness <name|path>
+  five-role-team --help
+
+  Running five-role-team with no subcommand prints this help and installs nothing.
 
 OPTIONS:
   --help, -h              Show this help message
 
-  INSTALLATION SCOPE (prompted on a TTY if omitted; init defaults to local; required, never prompted for uninstall):
-  --global                Install to global skills directory (~/.claude/skills/; pi also symlinks from ~/.pi/agent/skills/)
-  --local                 Install to local project skills directory (./.claude/skills/ or ./.pi/skills/)
+  SCOPE (init asks on a terminal unless given; defaults to local without a terminal; uninstall requires one):
+  --global                Install for all projects (~/.claude/skills/; pi also symlinks from ~/.pi/agent/skills/)
+  --local                 Install into this project (./.claude/skills/ or ./.pi/skills/)
 
-  HARNESS (prompted on a TTY if omitted; required, never prompted for uninstall):
+  HARNESS (init asks on a terminal unless given or set by --default; uninstall requires it):
   --harness <name|path>   Target harness: 'pi', 'claude-code', or custom path
                           - pi: Installs to ~/.claude/skills/ with symlink from ~/.pi/agent/skills/
-                          - claude-code: Installs to ~/.claude/skills/
+                          - claude-code: Installs to ~/.claude/skills/ (global) or ./.claude/skills/ (local)
                           - custom: Uses provided path as installation directory
+
+  SETUP:
+  --default               Install the default setup (detected harness, every agent, default models)
+                          with no setup questions. --harness, --agents and --agent-models override
+                          their part of the default.
+
+  NON-INTERACTIVE MODE:
+  --agents <list>         Comma-separated list of agents to install (skips the agent question)
+                          Example: --agents architect,worker,reviewer
+  --agent-models <map>    Comma-separated key=value pairs for agent models (skips the model questions)
+                          Example: --agent-models "worker=sonnet,reviewer=opus"
+                          Short names: opus, sonnet, haiku (expanded to full model paths)
 
   INSTALLATION MODE:
   --link                  Create symlinks instead of copying files (development mode)
+
+  OTHER OPTIONS:
+  --force                 Skip overwrite confirmation for existing installations
+  --verbose               Print one "Copying ..." line per directory while installing
 
   UNINSTALL (subcommand, must be the first argument):
   uninstall               Remove the installed plugin for the given scope and harness.
@@ -360,39 +395,29 @@ OPTIONS:
                           A --link install only loses its symlink; the source is never touched.
                           Exits 1 with "Nothing to uninstall" when nothing is installed.
                           Uses --global|--local and --harness. Other recognised options
-                          (--link, --force, --agents, --agent-models) are accepted but have
-                          no effect. Unknown flags or arguments are an error (exit 1).
+                          (--link, --force, --default, --verbose, --agents, --agent-models) are
+                          accepted but have no effect. Unknown flags or arguments are an error (exit 1).
 
-  INTERACTIVE MODE (default):
-  - Prompts for installation scope if omitted (except init, which defaults to local) and harness if omitted
-  - Prompts for agent selection (architect, designer, worker, reviewer, supervisor, intern)
-  - Prompts for model configuration for each selected agent
-
-  NON-INTERACTIVE MODE:
-  --agents <list>         Comma-separated list of agents to install (skips interactive prompt)
-                          Example: --agents architect,worker,reviewer
-  --agent-models <map>    Comma-separated key=value pairs for agent models (skips interactive prompt)
-                          Example: --agent-models "worker=sonnet,reviewer=opus"
-                          Short names: opus, sonnet, haiku (expanded to full model paths)
-
-  OTHER OPTIONS:
-  --force                 Skip overwrite confirmation for existing installations
+  INTERACTIVE MODE (init on a terminal, without --default):
+  - Asks "How do you want to set up five-role-team?": Default (recommended) or Custom
+  - Then asks where to install (this project, or all projects for this user)
+  - Custom also asks harness, agents and whether to keep the default models
 
 EXAMPLES:
-  # Interactive installation to pi (global)
-  node install.js --global --harness pi
+  # Install the default setup into this project
+  five-role-team init --default
 
-  # Interactive installation to claude-code (local)
-  node install.js --local --harness claude-code
+  # Install the default setup for all projects
+  five-role-team init --default --global
 
   # Non-interactive with specific agents and models
-  node install.js --global --harness pi --agents architect,worker,reviewer --agent-models "worker=sonnet"
+  five-role-team init --global --harness pi --agents architect,worker,reviewer --agent-models "worker=sonnet"
 
   # Development symlink installation
-  node install.js --global --harness claude-code --link
+  five-role-team init --global --harness claude-code --link
 
   # Uninstall
-  node install.js uninstall --global --harness pi
+  five-role-team uninstall --global --harness pi
 
 AGENT OPTIONS:
   architect   - Plan-time exploration, captures change artifacts
@@ -617,11 +642,31 @@ async function main(argv = args, options = {}) {
     return result;
   };
 
+  // --help is answered here too (not only by the module-level check), so a caller
+  // that runs main() with --help gets the usage and exit 0 rather than an install.
+  if (argv.includes('--help') || argv.includes('-h')) {
+    showUsage(log);
+    return result;
+  }
+
   const parsed = parseArgs(argv);
 
   // Check for parsing and validation errors
   if (parsed.errors.length > 0) {
     return fail('Error parsing arguments:', ...parsed.errors.map(err => '  - ' + err));
+  }
+
+  // No subcommand: nothing is installed. With no arguments, print usage and exit 0.
+  // With flags, an attempted install that does nothing must not look like success
+  // to a script, so print usage plus a note and exit 1.
+  if (!parsed.init && !parsed.uninstall) {
+    if (argv.length === 0) {
+      showUsage(log);
+      return result;
+    }
+    showUsage(error);
+    return fail('Error: installing needs the init subcommand. Nothing was installed.',
+      '  Hint: run "five-role-team init" with the same flags, e.g. five-role-team init --global --harness pi');
   }
 
   // TTY signal (real or explicitly injected for tests) drives interactive
@@ -643,7 +688,7 @@ async function main(argv = args, options = {}) {
   if (!argv.includes('--help') && !argv.includes('-h')) {
     if (!parsed.uninstall && !parsed.init && !parsed.global && !parsed.local) {
       if (!interactive) {
-        return fail('Error: --global or --local is required (installation scope).\n  Hint: re-run with --global or --local, e.g. node install.js --global --harness pi');
+        return fail('Error: --global or --local is required (installation scope).\n  Hint: re-run with --global or --local, e.g. five-role-team init --global --harness pi');
       }
       const scope = await promptScopeSelection({ promptsImpl: options.promptsImpl });
       if (scope === null) return cancel();
@@ -740,7 +785,7 @@ async function main(argv = args, options = {}) {
     return fail(
       'Error: No interactive input available: stdin is not a terminal, so the agent and model prompts cannot be answered.',
       '  For a non-interactive install pass --agents <list> and --agent-models <map>, for example:',
-      '  node install.js --global --harness pi --agents architect,worker --agent-models "worker=sonnet"'
+      '  five-role-team init --global --harness pi --agents architect,worker --agent-models "worker=sonnet"'
     );
   }
   try {
@@ -918,6 +963,7 @@ const {
 // Export functions for testing
 module.exports = {
   parseArgs,
+  showUsage,
   resolveHarnessPath,
   readDefaultModels,
   confirmOverwrite,

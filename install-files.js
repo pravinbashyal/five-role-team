@@ -232,7 +232,7 @@ function validatePluginSource(sourceDir) {
   const root = path.resolve(sourceDir);
   const manifest = path.join(root, '.claude-plugin', 'plugin.json');
   const notFound = `Not a five-role-team plugin directory: .claude-plugin/plugin.json not found in ${root}. ` +
-    'Run install.js from the five-role-team directory (the one that contains .claude-plugin/plugin.json).';
+    'Reinstall with "npm install -g @pravinbashyal/five-role-team", or run from a complete five-role-team checkout (the directory that contains .claude-plugin/plugin.json).';
 
   let st;
   try {
