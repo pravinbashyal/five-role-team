@@ -48,7 +48,36 @@ Then point a project's own `CLAUDE.md` at **`/five-role-team:apply`**, not just 
 
 ## Installation
 
-`install.js` copies (or links) the plugin into a harness's skills directory and lets you choose which agents to include and which model each one uses. Run it from a five-role-team checkout: the script refuses to run from any directory that does not contain `.claude-plugin/plugin.json`. It is an alternative to the `git clone` and marketplace installs under "Install" above, not a step to combine with them.
+Recommended (no clone needed): install the command globally, then initialize it inside each project:
+
+```bash
+npm install -g @pravinbashyal/five-role-team
+cd your-project
+five-role-team init
+```
+
+`five-role-team init` defaults to **local** scope, installing into `./.claude/skills/five-role-team/` (or `./.pi/skills/five-role-team/` for pi). Add `--global` to install into your user-wide skills directory instead. On a terminal it prompts for the harness (`pi`, `claude-code`, or a custom skills directory path) and, when `--agents`/`--agent-models` are omitted, for agents and models. `init` never prompts for scope. With no TTY, a missing harness (or, outside `init`, scope) exits 1 with a hint, so pass the flags:
+
+```bash
+# install into the current project for Claude Code
+five-role-team init --harness claude-code --agents architect,worker,reviewer --agent-models "worker=sonnet"
+
+# install into the user-wide skills directory for pi
+five-role-team init --global --harness pi --agents architect,worker,reviewer,supervisor,intern --agent-models "worker=sonnet"
+
+# install is an alias for init
+five-role-team install --local --harness claude-code --agents architect,worker,reviewer --agent-models "worker=sonnet"
+
+# uninstall (scope and harness are both required)
+five-role-team uninstall --local --harness claude-code
+five-role-team uninstall --global --harness pi
+```
+
+`install` is accepted as an alias for `init` (`five-role-team install ...`). Check `five-role-team --help` for the full option list.
+
+### Alternative: clone + node install.js
+
+`install.js` copies (or links) the plugin into a harness's skills directory and lets you choose which agents to include and which model each one uses. Run it from a five-role-team checkout: the script refuses to run from any directory that does not contain `.claude-plugin/plugin.json`. It is an alternative to the npm flow above and the marketplace install under "Install", not a step to combine with them.
 
 ### Prerequisites
 

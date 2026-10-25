@@ -12,4 +12,4 @@
 
 ## 3. Documentation
 
-- [ ] 3.1 Rewrite README Installation to lead with `npm install -g @pravinbashyal/five-role-team` then `five-role-team init` in a project, keep clone + `node install.js` as an alternative, and verify the documented commands in a sandbox against the packed tarball
+- [x] 3.1 Rewrite README Installation to lead with `npm install -g @pravinbashyal/five-role-team` then `five-role-team init` in a project, keep clone + `node install.js` as an alternative, and verify the documented commands in a sandbox against the packed tarball
