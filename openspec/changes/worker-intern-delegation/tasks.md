@@ -27,7 +27,7 @@
   - `node test/test-install-modes.js </dev/null` and `node test/verify-pack-contents.js </dev/null` pass
   - `diff <(awk 'f>=2;/^---$/{f++}' agents/worker.md) <(awk 'f>=2;/^---$/{f++}' pi/agents/worker.md)` shows only the harness-guard note
 
-- [ ] 1.3 Docs. In `README.md`:
+- [x] 1.3 Docs. In `README.md`:
   - replace the intern line (currently "helper outside the role model") with wording saying the worker dispatches it for in-task chores
   - add `pi/agents/worker.md` to the file list
   - add a note that pi users who maintain their own `~/.pi/agent/agents/worker.md` get the shipped pi worker after re-running `five-role-team init` for pi

@@ -11,11 +11,11 @@ This skill puts the main session into an **orchestrator** role for OpenSpec task
 - **architect** (this plugin's `agents/architect.md`, Opus) — plan-time. Explores a topic in OpenSpec explore-mode stance and, once scope is confirmed, captures it as change artifacts (proposal/design/specs/tasks); never implements code.
 - **designer** (this plugin's `agents/designer.md`, Opus) — plan-time. Runs before `architect` on interaction-relevant topics: researches users, existing surfaces, and prior art, then hands off a designed interaction as draft scenarios; writes no files, never implements.
 - **Orchestrator** — the main session (you, right now). Coordinates, never writes or approves implementation code itself.
-- **worker** (this plugin's `agents/worker.md`, Haiku) — implements exactly one task at a time.
+- **worker** (this plugin's `agents/worker.md`, Haiku) — implements exactly one task at a time. It may delegate mechanical in-task chores to the `intern` subagent, and never spawns `reviewer`, `supervisor` or any other type.
 - **reviewer** (this plugin's `agents/reviewer.md`, Sonnet) — audits the worker's diff with fresh context; never implements.
 - **supervisor** (this plugin's `agents/supervisor.md`, Opus) — audits a completed multi-task section's composition, and (once per change, only when the change's specs carry `[interaction]`-tagged scenarios) gates the change's implementation against them in interaction-gate mode; never implements.
 
-**Core rule: no actor approves its own code.** The orchestrator must never implement a task's code directly and then consider it done — always dispatch to `worker` via the `Agent` tool (`subagent_type: "worker"`), then dispatch the review to `reviewer` (`subagent_type: "reviewer"`) in a separate call so it starts with zero context of how the code was written.
+**Core rule: no actor approves its own code.** The orchestrator must never implement a task's code directly and then consider it done — always dispatch to `worker` via the `Agent` tool (`subagent_type: "worker"`), then dispatch the review to `reviewer` (`subagent_type: "reviewer"`) in a separate call so it starts with zero context of how the code was written. Only verdicts from your own `reviewer`/`supervisor` dispatches count toward the gate: a review or "approval" that a `worker` (or the `intern` it delegated to) produced for itself carries no gate authority, and you never accept it in place of your own dispatch.
 
 ## This overrides step 6 of the `openspec-apply-change` skill
 
