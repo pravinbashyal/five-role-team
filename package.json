@@ -23,7 +23,7 @@
     "access": "public"
   },
   "scripts": {
-    "test": "node test/test-command-grammar.js </dev/null && node test/test-install-modes.js </dev/null && node test/test-uninstall-modes.js </dev/null && node test/test-default-setup.js </dev/null && node test/test-interactive-init.js </dev/null && node test/test-install-output.js </dev/null && node test/verify-pack-contents.js </dev/null"
+    "test": "node test/test-command-grammar.js </dev/null && node test/test-install-modes.js </dev/null && node test/test-uninstall-modes.js </dev/null && node test/test-default-setup.js </dev/null && node test/test-interactive-init.js </dev/null && node test/test-install-output.js </dev/null && node test/verify-pack-contents.js </dev/null && node test/verify-readme-commands.js </dev/null"
   },
   "keywords": [
     "ai",

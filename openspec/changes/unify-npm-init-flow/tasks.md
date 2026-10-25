@@ -77,7 +77,7 @@
 
 ## 5. README
 
-- [ ] 5.1 Rewrite the README install sections (design D9):
+- [x] 5.1 Rewrite the README install sections (design D9):
   - The single path: `npm install -g @pravinbashyal/five-role-team`, then `five-role-team init`.
   - The Default/Custom and scope questions explained in plain words.
   - A flags reference including `--default` and `--verbose`, and the uninstall command.

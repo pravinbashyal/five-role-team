@@ -24,6 +24,7 @@ Before any of that, plan time has its own order: a `designer` role (Opus, read-o
 
 - A project using [OpenSpec](https://github.com/Fission-AI/OpenSpec) (`tasks.md`, `proposal.md`, `design.md`, `specs/*/spec.md`) — this isn't a general-purpose task runner.
 - The `openspec-apply-change` skill (or equivalent) for the actual OpenSpec CLI plumbing.
+- Node.js 14 or newer, for the `five-role-team` command.
 
 Optional, used when present, never required:
 - The [`context-mode`](https://github.com/mksglu/context-mode) plugin — `worker`/`reviewer`/`supervisor` route large/disposable command output through its `ctx_batch_execute`/`ctx_execute` tools when available, and fall back to plain `Bash` otherwise.
@@ -32,24 +33,7 @@ Optional, used when present, never required:
 
 ## Install
 
-From a local checkout (auto-loads every session, no marketplace needed):
-
-```
-git clone <this repo> ~/.claude/skills/five-role-team
-```
-
-From GitHub, in any project:
-
-```
-claude plugin marketplace add pravinbashyal/five-role-team
-claude plugin install five-role-team@five-role-team
-```
-
-Then point a project's own `CLAUDE.md` at **`/five-role-team:apply`**, not just at the skill by name — see "Getting this skill to actually load" in `SKILL.md`. A CLAUDE.md pointer to the skill alone is unreliable: skills only take effect when invoked, and a plain `/opsx:apply` loads its own instructions directly without first triggering this one. The `/five-role-team:apply` command is the deterministic fix.
-
-## Installation
-
-Recommended (no clone needed): install the command globally, then initialize it inside each project:
+Install the command once, then set up each project:
 
 ```bash
 npm install -g @pravinbashyal/five-role-team
@@ -57,113 +41,98 @@ cd your-project
 five-role-team init
 ```
 
-`five-role-team init` defaults to **local** scope, installing into `./.claude/skills/five-role-team/` (or `./.pi/skills/five-role-team/` for pi). Add `--global` to install into your user-wide skills directory instead. On a terminal it prompts for the harness (`pi`, `claude-code`, or a custom skills directory path) and, when `--agents`/`--agent-models` are omitted, for agents and models. `init` never prompts for scope. With no TTY, a missing harness (or, outside `init`, scope) exits 1 with a hint, so pass the flags:
+Then point a project's own `CLAUDE.md` at **`/five-role-team:apply`**, not just at the skill by name — see "Getting this skill to actually load" in `SKILL.md`. A CLAUDE.md pointer to the skill alone is unreliable: skills only take effect when invoked, and a plain `/opsx:apply` loads its own instructions directly without first triggering this one. The `/five-role-team:apply` command is the deterministic fix.
+
+### The two questions
+
+On a terminal, `five-role-team init` first prints the default setup: the detected harness, then each agent with its default model. Then it asks:
+
+1. **How do you want to set up five-role-team?**
+   - **Default (recommended)** installs every agent for the detected harness with its default model. It asks nothing else except where to install.
+   - **Custom** asks, in order, for the harness, which agents to include, and whether to keep the default models (answer no to pick a model for each agent). It then shows a review and asks `Install? (Y/n)`. Nothing is written until you confirm.
+2. **Where should five-role-team be installed?** (asked in both branches)
+   - **This project** (preselected) installs into `./.claude/skills/five-role-team/`, or `./.pi/skills/five-role-team/` for pi. Only this project sees it.
+   - **All projects for this user** installs into `~/.claude/skills/five-role-team/`, so every project sees it.
+
+The paths in the question are the real paths for the harness in use.
+
+The harness is detected from the current directory: pi when `./.pi` exists and `./.claude` does not, otherwise Claude Code. `--harness` overrides it.
+
+If five-role-team is already installed at the chosen path, `init` asks `Overwrite existing installation at <path>?` with No as the default. Choosing No, or pressing Ctrl-C or Esc at any question, prints "Installation cancelled. Nothing was changed." and changes nothing.
+
+### Without a terminal, or with `--default`
+
+`five-role-team init --default` installs the default setup with no questions, whether or not you are in a terminal. Scope is this project unless you pass `--global`.
 
 ```bash
-# install into the current project for Claude Code
-five-role-team init --harness claude-code --agents architect,worker,reviewer --agent-models "worker=sonnet"
-
-# install into the user-wide skills directory for pi
-five-role-team init --global --harness pi --agents architect,worker,reviewer,supervisor,intern --agent-models "worker=sonnet"
-
-# install is an alias for init
-five-role-team install --local --harness claude-code --agents architect,worker,reviewer --agent-models "worker=sonnet"
-
-# uninstall (scope and harness are both required)
-five-role-team uninstall --local --harness claude-code
-five-role-team uninstall --global --harness pi
+five-role-team init --default
+five-role-team init --default --global
+five-role-team init --default --harness pi --agent-models "worker=sonnet"
 ```
 
-`install` is accepted as an alias for `init` (`five-role-team install ...`). Check `five-role-team --help` for the full option list.
+`--harness`, `--agents` and `--agent-models` replace their part of the default setup.
 
-### Alternative: clone + node install.js
-
-`install.js` copies (or links) the plugin into a harness's skills directory and lets you choose which agents to include and which model each one uses. Run it from a five-role-team checkout: the script refuses to run from any directory that does not contain `.claude-plugin/plugin.json`. It is an alternative to the npm flow above and the marketplace install under "Install", not a step to combine with them.
-
-### Prerequisites
-
-- Node.js 14 or newer.
-- `npm install` once in the checkout. It installs `prompts`, which the interactive prompts use.
-
-### Options
-
-- `--global` or `--local` (one is required): install to the global skills directory (`~/.claude/skills/`; `pi` also gets a symlink, see Harness notes) or to the project's skills directory (`./.claude/skills/` or `./.pi/skills/`).
-- `--harness <name|path>` (required): `pi`, `claude-code`, or a custom skills directory path.
-- `--link`: symlink the checkout instead of copying files (development mode).
-- `--force`: replace an existing installation without asking.
-- `--agents <list>`: comma-separated agents to install, e.g. `architect,worker,reviewer`.
-- `--agent-models <map>`: comma-separated `agent=model` pairs, e.g. `"worker=sonnet,reviewer=opus"`. Short names are `opus`, `sonnet` and `haiku`; a name containing `/` is used as-is.
-
-Uninstall is a subcommand, not a flag: `node install.js uninstall --global --harness <name|path>`.
-
-### Interactive
-
-With neither `--agents` nor `--agent-models`, the script asks which agents to include, then the model for each selected agent. Press Enter at a model prompt to keep its default. This needs a terminal: without one, the script exits 1 and suggests the flags.
+Without `--default` and without a terminal, `init` runs only with explicit flags. Pass `--harness` and `--agents` or `--agent-models`:
 
 ```bash
-node install.js --global --harness pi
+five-role-team init --global --harness pi --agents architect,worker,reviewer --agent-models "worker=sonnet"
 ```
 
-### Non-interactive
+If required flags are missing, `init` exits 1 and writes nothing. The hint suggests `five-role-team init --default` first.
 
-Either flag skips the prompts. `--agents` picks the agents and keeps their default models. `--agent-models` overrides models; without `--agents`, every agent the harness supports is installed.
+### Flags
 
-```bash
-node install.js --global --harness pi --agents architect,worker,reviewer,supervisor,intern --agent-models "worker=sonnet"
-```
+| Flag | Meaning |
+| --- | --- |
+| `--default` | Install the default setup with no setup questions. |
+| `--global` / `--local` | Scope: `--global` installs for all projects for this user, `--local` installs into this project. Without a terminal, `init` defaults to `--local`. |
+| `--harness <name\|path>` | `pi`, `claude-code`, or a custom skills directory path. |
+| `--agents <list>` | Comma-separated agents to install, e.g. `architect,worker,reviewer`. Skips the agent question. Without it, every agent for the harness is installed. |
+| `--agent-models <map>` | Comma-separated `agent=model` pairs, e.g. `"worker=sonnet,reviewer=opus"`. Skips the model questions. Short names are `opus`, `sonnet` and `haiku`; a name containing `/` is used as-is. |
+| `--force` | Overwrite an existing installation without asking. Needed in scripts, because a run without a terminal cannot confirm. |
+| `--verbose` | Print one "Copying ..." line per directory. Without it, the install is quiet. |
+| `--help`, `-h` | Show usage. |
 
-For a development symlink install (`--link`), see the last example under Common scenarios.
-
-### Common scenarios
-
-Team without a designer: list only the agents you want. `designer` is not installed and is left out of `.agent-config.json`. Without `--agent-models`, each agent keeps its default model.
-
-```bash
-node install.js --global --harness claude-code --agents architect,worker,reviewer,supervisor
-```
-
-Custom models: `--agent-models` replaces the model of each named agent, and the other selected agents keep their defaults. Short names are expanded to full model paths.
-
-```bash
-node install.js --global --harness claude-code --agents architect,worker,reviewer --agent-models "worker=sonnet,reviewer=opus"
-```
-
-A name containing `/` is used as-is, so a full model path works too:
-
-```bash
-node install.js --global --harness claude-code --agents architect,worker,reviewer --agent-models "architect=anthropic/claude-opus-4-5-20251101"
-```
-
-Development symlink install: `--link` points the harness at the checkout, so edits there are picked up without reinstalling. In `--link` mode the agent and model choices are not applied: the whole source directory is linked and no `.agent-config.json` is written. The `--agents` value below only stops the command from asking agent and model questions, and it has no effect on the link.
-
-```bash
-node install.js --global --harness claude-code --link --agents worker
-```
+Running `five-role-team` with no subcommand prints usage and installs nothing. `install` is not a command; use `init`.
 
 ### Uninstall
 
 ```bash
-node install.js uninstall --global --harness pi
+five-role-team uninstall --local --harness claude-code
+five-role-team uninstall --global --harness pi
 ```
 
-A copy install is deleted, including `.agent-config.json`. A `--link` install loses only its symlink; the checkout is never touched. For `pi`, the `~/.pi/agent/skills/` symlink is removed too. With nothing installed, the command exits 1 with "Nothing to uninstall".
+Uninstall never prompts. It needs both a scope (`--global` or `--local`) and a `--harness`. It removes the installed copy, including `.agent-config.json`, and for pi also removes the `~/.pi/agent/skills/five-role-team` symlink. With nothing installed it exits 1 with "Nothing to uninstall".
 
 ### Harness notes
 
-- **`pi`** installs to `~/.claude/skills/five-role-team` and adds a symlink at `~/.pi/agent/skills/five-role-team` pointing to it.
-- **`claude-code`** installs to `~/.claude/skills/five-role-team` and leaves out the pi-only files.
+- **`claude-code`** installs to `~/.claude/skills/five-role-team` (global) or `./.claude/skills/five-role-team` (local). For a local install, start Claude Code from the project root.
+- **`pi`** installs to `~/.claude/skills/five-role-team` (global) with a symlink at `~/.pi/agent/skills/five-role-team`, or to `./.pi/skills/five-role-team` (local).
 - **A custom path** installs to `<path>/five-role-team`.
-- **`--local`** installs into the current directory, so run it from the project root.
-- Copy installs write `.agent-config.json` next to the plugin, recording the agents and models. `--link` installs write none.
-- Re-running over an existing installation asks before replacing it. Without a terminal it exits 1, so pass `--force` in scripts.
 
-### Testing the installer
+### Troubleshooting
 
-The manual install-mode matrix scripts live in the checkout's `test/` directory: `test/test-install-modes.js` (install) and `test/test-uninstall-modes.js` (install then uninstall). Each covers 16 mode cells. Every cell runs in its own temp HOME and temp working directory, never in your real `~/.claude` or `~/.pi`. Run them from the checkout with an empty stdin:
+- **A marketplace copy shadows the install.** If you previously installed five-role-team from the Claude Code marketplace, that copy takes precedence over the npm install, and the new install will not load. After a Claude Code install, `init` warns in its "Next steps" block when it finds such a copy and prints the exact command. Remove it with `claude plugin uninstall five-role-team@five-role-team`. The installer never uninstalls anything itself.
+- **Managed settings block the plugin.** If your organisation manages Claude Code settings, a managed setting can stop skills-directory plugins from loading, without showing an error. Check `/status` in Claude Code, and see the Claude Code plugin documentation for managed settings.
+- **`/five-role-team:apply` is missing.** Start Claude Code from the project root, or run `/reload-plugins` in an open session.
 
-- `node test/test-install-modes.js </dev/null`
-- `node test/test-uninstall-modes.js </dev/null`
+## Testing the installer
+
+`npm test` runs every check, including `test/verify-readme-commands.js`, which packs the tarball, installs it globally into a temporary prefix, and runs the documented commands in a sandbox. Each check runs in its own temp HOME and temp working directory, never in your real `~/.claude` or `~/.pi`.
 
 ## Why a plugin instead of copy-pasting the agent files
 
 The three agent personas alone aren't the whole system — the dispatch loop (record base SHA, one task at a time, re-review exceptions, section gating, escalation rules) lived in a single project's `CLAUDE.md` prose. Packaging it as a skill means installing this plugin gives a new project the whole protocol, not just personas that still need a hand-copied `CLAUDE.md` section.
+
+## Contributing
+
+To work on five-role-team itself, link the checkout instead of installing a copy:
+
+```bash
+cd five-role-team
+npm install
+npm link
+five-role-team init --link
+```
+
+`npm install` fetches the `prompts` dependency, and `npm link` puts `five-role-team` on your PATH from the checkout. `init --link` then symlinks the checkout into the harness's skills directory, so edits there are picked up without reinstalling. On a terminal it asks only the scope and harness questions; it asks nothing about Default/Custom, agents or models, because a link installs the whole checkout.
