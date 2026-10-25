@@ -46,7 +46,7 @@
 // cell passes and coverage holds.
 //
 // INSTALL_MODES_SOURCE=<dir> copies the plugin source from <dir> instead of this checkout. It is
-// used by verify-task-9-3.js for a negative check (a sabotaged source must fail the script).
+// (a sabotaged source must fail the script when this is set to a broken copy).
 const fs = require('fs');
 const path = require('path');
 const { createSandbox } = require(path.join(__dirname, 'verify-sandbox.js'));
@@ -56,7 +56,7 @@ const {
 
 const SOURCE = process.env.INSTALL_MODES_SOURCE
   ? path.resolve(process.env.INSTALL_MODES_SOURCE)
-  : __dirname;
+  : path.join(__dirname, '..');
 
 // Independent literal copy of the axis values, used only by the coverage check. Kept here on
 // purpose: it must not be derived from verify-matrix.js, or a dropped axis value would go unnoticed.

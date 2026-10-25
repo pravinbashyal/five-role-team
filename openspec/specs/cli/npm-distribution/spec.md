@@ -22,7 +22,7 @@ The published tarball SHALL contain the files the installer needs and SHALL NOT 
 
 #### Scenario: Pack contents
 - **WHEN** `npm pack --dry-run` is run
-- **THEN** the list includes `install.js`, `install-files.js`, `SKILL.md`, `agents/`, `commands/`, `conventions/`, `.claude-plugin/` and `pi/`, and excludes `verify-*.js`, `test-*.js`, `openspec/`, `.claude/` and `.pi/`
+- **THEN** the list includes `install.js`, `install-files.js`, `SKILL.md`, `agents/`, `commands/`, `conventions/`, `.claude-plugin/` and `pi/`, and excludes `test/`, `openspec/`, `.claude/` and `.pi/`
 
 ### Requirement: init subcommand starts the plugin in a project
 The installer SHALL accept `init` as a subcommand that installs into the current project directory by default, and SHALL accept `install` as an alias.

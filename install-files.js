@@ -164,7 +164,7 @@ function ensureInstallDirectories(resolved) {
  * Top-level plugin entries that are part of an installation (allowlist taken
  * from design.md "Context": SKILL.md, agents/, commands/, conventions/,
  * .claude-plugin/). Anything not listed here (openspec/, .git, node_modules,
- * .claude/, .pi/, verify-task-*.js / test-*.js scratch scripts, installer
+ * .claude/, .pi/, test/, installer
  * sources, package files, README) is never part of the install set.
  * `agents/` and `pi/agents/` are handled separately (per-agent filtering).
  */

@@ -1,9 +1,7 @@
 #!/usr/bin/env node
 'use strict';
-// Shared matrix and plugin-source definitions for the install/uninstall verify scripts:
-// test-install-modes.js, test-uninstall-modes.js, verify-task-8-3.js, verify-task-8-4.js,
-// verify-task-9-1.js .. verify-task-9-4.js. The values and helpers here are the ones those
-// scripts previously each carried inline.
+// Shared matrix and plugin-source definitions for the install/uninstall test scripts in this
+// directory (test-install-modes.js, test-uninstall-modes.js, verify-pack-contents.js).
 //
 // SINGLE SOURCE OF TRUTH: when install.js gains a new local module (a file it loads from its own
 // directory), add the file name to SOURCE_ENTRIES below and to nowhere else. Every plugin-source
@@ -17,8 +15,8 @@
 const fs = require('fs');
 const path = require('path');
 
-// The plugin checkout this file sits in.
-const REPO_ROOT = __dirname;
+// The plugin checkout this file sits in (this file lives in <checkout>/test/).
+const REPO_ROOT = path.join(__dirname, '..');
 
 // Entries of the plugin source that an install needs. See the header: edit only here.
 const SOURCE_ENTRIES = Object.freeze(['SKILL.md', 'agents', 'pi', 'commands', 'conventions', '.claude-plugin',

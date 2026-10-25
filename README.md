@@ -10,9 +10,10 @@ Before any of that, plan time has its own order: a `designer` role (Opus, read-o
 
 - `agents/designer.md` — plan-time, runs before `architect` on interaction-relevant topics: researches users, existing surfaces, and prior art, then hands off a designed interaction as draft `[interaction]`-tagged scenarios; writes no files, no code, no mockups
 - `agents/architect.md` — explores an idea/problem in OpenSpec explore-mode stance, folds in any `designer` handoff, and captures confirmed scope as change artifacts; never implements code
-- `agents/worker.md` — implements exactly one task at a time, never marks its own work done
+- `agents/worker.md` (Haiku) — implements exactly one task at a time, never marks its own work done
 - `agents/reviewer.md` — audits a worker's diff with fresh context, never implements
 - `agents/supervisor.md` — audits a completed multi-task section's composition, and (once per change, only when the change's specs carry `[interaction]`-tagged scenarios) gates the change's implementation against them; never implements
+- `agents/intern.md` — pi-only helper outside the role model: handles menial chores for other agents (file lookups, boilerplate edits, mechanical cleanups) and delegates small code-writing chores to a local `qwen2.5-coder:7b`; makes no design or review decisions
 - `SKILL.md` (this plugin's root skill, `five-role-team`) — the orchestrator's dispatch-loop protocol; overrides step 6 of the `openspec-apply-change` skill's default "implement inline" behavior
 - `commands/explore.md` (`/five-role-team:explore [topic]`) — judges interaction-relevance and, when it applies, dispatches `designer` (Opus) before dispatching `architect` (Opus) for exploration/planning, instead of running explore mode inline in the main session's model
 - `commands/apply.md` (`/five-role-team:apply [change-name]`) — the reliable entry point; loads the protocol and the OpenSpec apply steps together in one turn instead of hoping the skill gets triggered on its own
@@ -158,10 +159,10 @@ A copy install is deleted, including `.agent-config.json`. A `--link` install lo
 
 ### Testing the installer
 
-The manual install-mode matrix scripts live in the checkout: `test-install-modes.js` (install) and `test-uninstall-modes.js` (install then uninstall). Each covers 16 mode cells. Every cell runs in its own temp HOME and temp working directory, never in your real `~/.claude` or `~/.pi`. Run them from the checkout with an empty stdin:
+The manual install-mode matrix scripts live in the checkout's `test/` directory: `test/test-install-modes.js` (install) and `test/test-uninstall-modes.js` (install then uninstall). Each covers 16 mode cells. Every cell runs in its own temp HOME and temp working directory, never in your real `~/.claude` or `~/.pi`. Run them from the checkout with an empty stdin:
 
-- `node test-install-modes.js </dev/null`
-- `node test-uninstall-modes.js </dev/null`
+- `node test/test-install-modes.js </dev/null`
+- `node test/test-uninstall-modes.js </dev/null`
 
 ## Why a plugin instead of copy-pasting the agent files
 

@@ -11,9 +11,8 @@ const path = require('path');
 const { spawnSync } = require('child_process');
 const { createSandbox } = require(path.join(__dirname, 'verify-sandbox.js'));
 const { SOURCE_ENTRIES } = require(path.join(__dirname, 'verify-matrix.js'));
-const pkg = require(path.join(__dirname, 'package.json'));
-
-const REPO_ROOT = __dirname;
+const REPO_ROOT = path.join(__dirname, '..');
+const pkg = require(path.join(REPO_ROOT, 'package.json'));
 const TIMEOUT_MS = 120000;
 
 const sb = createSandbox();
