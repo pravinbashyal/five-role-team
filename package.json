@@ -1,6 +1,6 @@
 {
   "name": "@pravinbashyal/five-role-team",
-  "version": "1.0.1-beta.1",
+  "version": "1.1.0",
   "description": "Five-role team plugin for AI assistant harnesses with customizable agent installation",
   "main": "install.js",
   "bin": {
