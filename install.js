@@ -327,6 +327,20 @@ function readDefaultModels(agentIds, sourceDir = __dirname) {
   return defaults;
 }
 
+/**
+ * Harness used by the default setup when --harness is not given (design D2).
+ * pi when `./.pi` exists and `./.claude` does not; otherwise claude-code.
+ * Looks only at the current directory (or the given one), never at HOME.
+ *
+ * @param {string} [cwd] - Directory to inspect (default process.cwd())
+ * @returns {'pi'|'claude-code'}
+ */
+function detectDefaultHarness(cwd = process.cwd()) {
+  const hasPi = fs.existsSync(path.join(cwd, '.pi'));
+  const hasClaude = fs.existsSync(path.join(cwd, '.claude'));
+  return hasPi && !hasClaude ? 'pi' : 'claude-code';
+}
+
 // Parse command line arguments
 const args = process.argv.slice(2);
 
@@ -669,6 +683,13 @@ async function main(argv = args, options = {}) {
       '  Hint: run "five-role-team init" with the same flags, e.g. five-role-team init --global --harness pi');
   }
 
+  // --default (design D2): without --harness the harness is detected from the current
+  // directory. Scope is already local for init (parseArgs), and agents and models are
+  // resolved below without any question.
+  if (parsed.defaultSetup && !parsed.harness) {
+    parsed.harness = detectDefaultHarness();
+  }
+
   // TTY signal (real or explicitly injected for tests) drives interactive
   // scope/harness prompting; an injected promptsImpl alone does not.
   const interactive = !!(options.isTTY || (process.stdin && process.stdin.isTTY));
@@ -697,7 +718,9 @@ async function main(argv = args, options = {}) {
     }
     if (!parsed.uninstall && !parsed.harness) {
       if (!interactive) {
-        return fail('Error: --harness is required (harness name or path, e.g. --harness pi)\n  Hint: re-run with --harness, e.g. --harness claude-code');
+        return fail('Error: --harness is required (harness name or path, e.g. --harness pi)',
+          '  Hint: run "five-role-team init --default" for the default setup with no questions,',
+          '  or re-run with explicit flags, e.g. five-role-team init --harness claude-code --agents architect,worker');
       }
       const h = await promptHarnessSelection({ promptsImpl: options.promptsImpl });
       if (h === null) return cancel();
@@ -778,20 +801,22 @@ async function main(argv = args, options = {}) {
   }
 
   const hasModelFlag = Object.keys(parsed.agentModels).length > 0;
-  // With neither --agents nor --agent-models, the agent and model prompts run. Without
-  // a terminal they can never be answered, so refuse up front with a clear message
-  // instead of exiting silently (task 8.3). Injected prompts (tests) bypass this check.
-  if (parsed.agents === null && !hasModelFlag && !options.promptsImpl && !(process.stdin && process.stdin.isTTY)) {
+  // --default never asks agent or model questions, with or without a terminal.
+  // Otherwise, with neither --agents nor --agent-models, the agent and model prompts
+  // run. Without a terminal they can never be answered, so refuse up front with a
+  // clear message instead of exiting silently (task 8.3). Injected prompts (tests)
+  // bypass this check.
+  if (!parsed.defaultSetup && parsed.agents === null && !hasModelFlag && !options.promptsImpl && !(process.stdin && process.stdin.isTTY)) {
     return fail(
       'Error: No interactive input available: stdin is not a terminal, so the agent and model prompts cannot be answered.',
-      '  For a non-interactive install pass --agents <list> and --agent-models <map>, for example:',
+      '  Hint: run "five-role-team init --default" for the default setup with no questions, or pass explicit flags, for example:',
       '  five-role-team init --global --harness pi --agents architect,worker --agent-models "worker=sonnet"'
     );
   }
   try {
-    // Agent selection (section 3)
+    // Agent selection (section 3). --default selects every agent unless --agents is given.
     let selectedAgents;
-    if (parsed.agents !== null || hasModelFlag) {
+    if (parsed.defaultSetup || parsed.agents !== null || hasModelFlag) {
       const resolution = resolveSelectedAgents({ agents: parsed.agents });
       if (resolution.errors.length > 0) {
         return fail(...resolution.errors.map(msg => 'Error: ' + msg));
@@ -807,8 +832,9 @@ async function main(argv = args, options = {}) {
     let models;
     // Any flag skips the prompt it covers: --agent-models covers models, and
     // --agents covers both selection and model defaults (no model prompts).
-    // Only with no flags at all do both prompts run.
-    if (hasModelFlag || parsed.agents !== null) {
+    // --default uses the frontmatter defaults (with --agent-models overrides) and
+    // never prompts. Only with no flags at all do both prompts run.
+    if (parsed.defaultSetup || hasModelFlag || parsed.agents !== null) {
       models = resolveAgentModels(selectedAgents, defaults, parsed.agentModels);
     } else {
       models = await promptModelConfiguration(selectedAgents, defaults, promptsOption);
@@ -966,6 +992,7 @@ module.exports = {
   showUsage,
   resolveHarnessPath,
   readDefaultModels,
+  detectDefaultHarness,
   confirmOverwrite,
   promptScopeSelection,
   promptHarnessSelection,

@@ -18,7 +18,7 @@
 
 ## 2. Default bundle and non-interactive `--default`
 
-- [ ] 2.1 Add default-bundle resolution (design D2) and the `--default` path (design D5):
+- [x] 2.1 Add default-bundle resolution (design D2) and the `--default` path (design D5):
   - Detect the harness: pi when `./.pi` exists and `./.claude` does not, otherwise claude-code. `--harness` overrides.
   - Agents: all available for the harness. Models: frontmatter defaults.
   - Scope: local unless `--global`.
@@ -96,6 +96,18 @@
   - In a temp project containing `.claude/`, run `five-role-team init --default`. Confirm `./.claude/skills/five-role-team/.claude-plugin/plugin.json`, `agents/` and `commands/` exist, and that the output ends with "Next steps".
   - Run `five-role-team uninstall --local --harness claude-code` and confirm the directory is gone.
   - Confirm `npm test` and `test/verify-pack-contents.js` pass.
+
+## 7. Version flag
+
+- [ ] 7.1 Add `--version` / `-v` to `install.js`:
+  - Prints the `version` from the package's own `package.json` (one line, e.g. `1.1.0`) to stdout and exits 0, with no other output and nothing installed.
+  - Works with no subcommand and takes precedence over other flags; it needs no TTY.
+  - Listed in `showUsage` next to `--help`.
+
+  Verify:
+  - `node install.js --version` and `node install.js -v` print the version from `package.json` and exit 0.
+  - Add checks to `test/test-command-grammar.js`; `npm test` passes.
+  - Re-run the packed-tarball check from 6.1 and confirm `five-role-team --version` works there.
 
 ## Workflow follow-up
 
