@@ -92,6 +92,7 @@ If required flags are missing, `init` exits 1 and writes nothing. The hint sugge
 | `--force` | Overwrite an existing installation without asking. Needed in scripts, because a run without a terminal cannot confirm. |
 | `--verbose` | Print one "Copying ..." line per directory. Without it, the install is quiet. |
 | `--help`, `-h` | Show usage. |
+| `--version`, `-v` | Print the installed version and exit. Installs nothing. |
 
 Running `five-role-team` with no subcommand prints usage and installs nothing. `install` is not a command; use `init`.
 

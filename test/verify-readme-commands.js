@@ -122,6 +122,12 @@ function sandboxChecks() {
     assert(fs.existsSync(bin), 'npm install -g puts five-role-team on the sandbox prefix bin');
     if (installed.status !== 0 || !fs.existsSync(bin)) return;
 
+    // five-role-team --version from the installed tarball prints the package version (task 7.1).
+    const pkgVersion = JSON.parse(fs.readFileSync(path.join(REPO_ROOT, 'package.json'), 'utf8')).version;
+    const version = sb.run([bin, '--version'], { cwd: project, timeout: NPM_TIMEOUT_MS });
+    assert(version.status === 0 && version.stdout === pkgVersion + '\n',
+      `five-role-team --version from the packed tarball exits 0 and prints ${pkgVersion} (got ${version.status} ${JSON.stringify(version.stdout)})`);
+
     // five-role-team init --default, standing in for the interactive run (stdin not a TTY).
     const init = sb.run([bin, 'init', '--default'], { cwd: project, timeout: NPM_TIMEOUT_MS });
     assert(init.status === 0, `five-role-team init --default exits 0 (got ${init.status}; ${init.stderr.trim()})`);

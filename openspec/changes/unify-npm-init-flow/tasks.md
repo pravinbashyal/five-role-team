@@ -99,7 +99,7 @@
 
 ## 7. Version flag
 
-- [ ] 7.1 Add `--version` / `-v` to `install.js`:
+- [x] 7.1 Add `--version` / `-v` to `install.js`:
   - Prints the `version` from the package's own `package.json` (one line, e.g. `1.1.0`) to stdout and exits 0, with no other output and nothing installed.
   - Works with no subcommand and takes precedence over other flags; it needs no TTY.
   - Listed in `showUsage` next to `--help`.

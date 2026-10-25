@@ -13,7 +13,11 @@
 //
 // Exit 0 only when every check passes.
 const path = require('path');
+const { spawnSync } = require('child_process');
 const { parseArgs, showUsage, main } = require(path.join(__dirname, '..', 'install.js'));
+
+// Version the package declares; --version must print exactly this (task 7.1).
+const PKG_VERSION = require(path.join(__dirname, '..', 'package.json')).version;
 
 let passed = 0;
 let failed = 0;
@@ -111,6 +115,55 @@ async function main_() {
     check('parseArgs: uninstall still parses', u.errors.length === 0 && u.uninstall === true, JSON.stringify(u.errors));
     const bare = parseArgs(['--global']);
     check('parseArgs: no subcommand sets neither init nor uninstall', !bare.init && !bare.uninstall);
+  }
+
+  // ---- --version / -v (task 7.1) ----
+  for (const flag of ['--version', '-v']) {
+    const { result, out, err } = await run([flag]);
+    check(`${flag}: exit 0`, result.exitCode === 0, `got ${result.exitCode}`);
+    check(`${flag}: prints exactly the package.json version`, out === PKG_VERSION, JSON.stringify(out));
+    check(`${flag}: nothing on stderr and nothing installed`,
+      err === '' && result.selectedAgents === null && !result.cancelled, err);
+  }
+  {
+    const { result, out, err } = await run(['init', '--version']);
+    check('init --version: exit 0 and only the version printed',
+      result.exitCode === 0 && out === PKG_VERSION && err === '', `${result.exitCode} ${JSON.stringify(out)}`);
+    check('init --version: installs nothing', result.selectedAgents === null && !result.cancelled);
+  }
+  {
+    // Precedence: --version wins over flags that would otherwise be a parse error or an install.
+    const { result, out, err } = await run(['--version', '--global', '--harness', 'pi', '--bogus']);
+    check('--version with bad flags: exit 0 and only the version printed',
+      result.exitCode === 0 && out === PKG_VERSION && err === '', `${result.exitCode} ${JSON.stringify(err)}`);
+  }
+  {
+    const { result, out } = await run(['--help', '--version']);
+    check('--version beats --help: prints the version, not usage',
+      result.exitCode === 0 && out === PKG_VERSION, JSON.stringify(out.slice(0, 40)));
+  }
+  {
+    const p = parseArgs(['--version']);
+    check('parseArgs: --version and -v parse without errors',
+      p.version === true && p.errors.length === 0 && parseArgs(['-v']).version === true && parseArgs(['-v']).errors.length === 0,
+      JSON.stringify(p.errors));
+  }
+  {
+    const lines = [];
+    showUsage((l) => lines.push(l));
+    const text = lines.join('\n');
+    check('showUsage: lists --version and -v', /--version, -v/.test(text) && /five-role-team --version/.test(text));
+  }
+  for (const flag of ['--version', '-v']) {
+    // Real process, no TTY (stdin /dev/null): the entry point itself prints and exits 0.
+    const r = spawnSync(process.execPath, [path.join(__dirname, '..', 'install.js'), flag], {
+      input: '',
+      encoding: 'utf8',
+      timeout: 30000,
+    });
+    check(`node install.js ${flag}: exit 0`, r.status === 0, `got ${r.status} ${r.stderr}`);
+    check(`node install.js ${flag}: stdout is the version line only`, r.stdout === PKG_VERSION + '\n', JSON.stringify(r.stdout));
+    check(`node install.js ${flag}: no stderr`, r.stderr === '', r.stderr);
   }
 
   console.log(`SUMMARY: ${passed} passed, ${failed} failed`);

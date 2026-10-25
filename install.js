@@ -23,6 +23,8 @@ const prompts = require('prompts');
  * - --force: Force overwrite without confirmation
  * - --default: Install the default setup with no setup questions (parsed here; behaviour in task 2.1)
  * - --verbose: Print one "Copying ..." line per directory while installing (task 4.1)
+ * - --version, -v: Print the version from package.json and exit 0 (task 7.1). Takes precedence
+ *   over every other argument; nothing is installed and no TTY is needed.
  * - init: Subcommand (must be the first argument) that installs. Scope defaults to local.
  * - uninstall: Subcommand (must be the first argument) that removes the installed
  *   plugin instead of installing it: `five-role-team uninstall --global --harness pi`.
@@ -42,6 +44,7 @@ const prompts = require('prompts');
  *   - verbose: boolean
  *   - uninstall: boolean
  *   - init: boolean
+ *   - version: boolean (--version or -v)
  *   - agents: array or null (null if not provided, empty array if provided but empty)
  *   - agentModels: object (empty object {} if not provided). Values preserve any '=' characters.
  *   - errors: array of error messages
@@ -66,6 +69,7 @@ function parseArgs(argv) {
     verbose: false,
     uninstall: false,
     init: false,
+    version: false,
     agents: null,
     agentModels: {},
     errors: []
@@ -111,6 +115,10 @@ function parseArgs(argv) {
     } else if (arg === '--help' || arg === '-h') {
       // Handled before parsing (see the early --help check); accepted here so it
       // is not reported as an unknown flag.
+    } else if (arg === '--version' || arg === '-v') {
+      // Handled by main() before any install work (task 7.1); accepted here so it
+      // is not reported as an unknown flag.
+      parsed.version = true;
     } else if (arg === 'uninstall') {
       // Reached only when uninstall is not the first argument (index 0 is
       // stripped above). Rejected so it cannot silently fall through to an install.
@@ -344,12 +352,41 @@ function detectDefaultHarness(cwd = process.cwd()) {
 // Parse command line arguments
 const args = process.argv.slice(2);
 
+// Check for --version / -v early. It takes precedence over every other argument, so it
+// is answered before the --help check and before any install work.
+if (wantsVersion(args)) {
+  console.log(readVersion());
+  if (require.main === module) {
+    process.exit(0);
+  }
+}
+
 // Check for --help flag early
 if (args.includes('--help') || args.includes('-h')) {
   showUsage();
   if (require.main === module) {
     process.exit(0);
   }
+}
+
+/**
+ * Whether argv asks for the version (`--version` or `-v`).
+ *
+ * @param {string[]} argv - Arguments (without 'node' and script name)
+ * @returns {boolean}
+ */
+function wantsVersion(argv) {
+  return argv.includes('--version') || argv.includes('-v');
+}
+
+/**
+ * Read the version from this package's own package.json (task 7.1). Read at call
+ * time so the value always matches the installed package.
+ *
+ * @returns {string} e.g. "1.1.0"
+ */
+function readVersion() {
+  return require(path.join(__dirname, 'package.json')).version;
 }
 
 /**
@@ -368,11 +405,13 @@ USAGE:
   five-role-team init --default [OPTIONS]    Install the default setup with no questions
   five-role-team uninstall --global|--local --harness <name|path>
   five-role-team --help
+  five-role-team --version
 
   Running five-role-team with no subcommand prints this help and installs nothing.
 
 OPTIONS:
   --help, -h              Show this help message
+  --version, -v           Print the version and exit (installs nothing)
 
   SCOPE (init asks on a terminal unless given; defaults to local without a terminal; uninstall requires one):
   --global                Install for all projects (~/.claude/skills/; pi also symlinks from ~/.pi/agent/skills/)
@@ -890,6 +929,13 @@ async function main(argv = args, options = {}) {
     return result;
   };
 
+  // --version is answered first, before parsing and before any other flag can fail or
+  // install (task 7.1). Only the version line goes to stdout; nothing else is printed.
+  if (wantsVersion(argv)) {
+    log(readVersion());
+    return result;
+  }
+
   // --help is answered here too (not only by the module-level check), so a caller
   // that runs main() with --help gets the usage and exit 0 rather than an install.
   if (argv.includes('--help') || argv.includes('-h')) {
@@ -1254,8 +1300,8 @@ module.exports = {
   main,
 };
 
-// Run main if not showing help
-if (require.main === module && !args.includes('--help') && !args.includes('-h')) {
+// Run main if not showing help or version
+if (require.main === module && !wantsVersion(args) && !args.includes('--help') && !args.includes('-h')) {
   main().then(result => {
     if (result.exitCode !== 0) process.exit(result.exitCode);
   }).catch(err => {
