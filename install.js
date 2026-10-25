@@ -22,7 +22,7 @@ const prompts = require('prompts');
  * - --link: Use symlink mode instead of copy
  * - --force: Force overwrite without confirmation
  * - --default: Install the default setup with no setup questions (parsed here; behaviour in task 2.1)
- * - --verbose: Print per-directory copy lines (parsed here; behaviour in task 4.1)
+ * - --verbose: Print one "Copying ..." line per directory while installing (task 4.1)
  * - init: Subcommand (must be the first argument) that installs. Scope defaults to local.
  * - uninstall: Subcommand (must be the first argument) that removes the installed
  *   plugin instead of installing it: `five-role-team uninstall --global --harness pi`.
@@ -554,6 +554,60 @@ function logInstallSummary(log, s) {
     log('  Configuration file: ' + s.cfgPath);
     log('  Agents and models:');
     s.selectedAgents.forEach(id => log('    ' + id + ': ' + s.models[id]));
+  }
+}
+
+/**
+ * Marketplace copies that would shadow a skills-directory install (task 4.1, design D8).
+ * Read-only: reads `<home>/.claude/plugins/installed_plugins.json` and returns each key of
+ * `plugins` whose name part is `five-role-team` and whose origin part is not `skills-dir`
+ * (e.g. `five-role-team@five-role-team`). A missing, unreadable or unexpected file gives
+ * an empty list and never throws.
+ *
+ * @param {string} [homeDir] - Home directory (default os.homedir())
+ * @returns {string[]} Plugin ids that shadow the install
+ */
+function findShadowingPluginIds(homeDir = os.homedir()) {
+  let data;
+  try {
+    data = JSON.parse(fs.readFileSync(path.join(homeDir, '.claude', 'plugins', 'installed_plugins.json'), 'utf8'));
+  } catch (err) {
+    return [];
+  }
+  const plugins = data && typeof data === 'object' && !Array.isArray(data) ? data.plugins : null;
+  if (!plugins || typeof plugins !== 'object' || Array.isArray(plugins)) return [];
+  const ids = [];
+  for (const id of Object.keys(plugins)) {
+    const at = id.lastIndexOf('@');
+    if (at <= 0 || at === id.length - 1) continue;
+    if (id.slice(0, at) === 'five-role-team' && id.slice(at + 1) !== 'skills-dir') ids.push(id);
+  }
+  return ids;
+}
+
+/**
+ * "Next steps" block (task 4.1, design D7, D8). Printed last after a successful install.
+ * Claude Code gets the start, /five-role-team:apply and CLAUDE.md steps; any other harness
+ * gets one generic line. Each shadowing marketplace copy adds a warning with the exact
+ * uninstall command. The installer never uninstalls anything itself.
+ *
+ * @param {function} log - stdout logger
+ * @param {object} s
+ * @param {string} s.harness - Harness name or path as given
+ * @param {string[]} s.shadowIds - Shadowing marketplace ids (Claude Code only; [] otherwise)
+ */
+function logNextSteps(log, s) {
+  log('Next steps:');
+  if (s.harness === 'claude-code') {
+    log('  1. Start Claude Code from the project root, or run /reload-plugins in an open session.');
+    log('  2. Run /five-role-team:apply to implement an OpenSpec change.');
+    log("  3. Point the project's CLAUDE.md at /five-role-team:apply.");
+  } else {
+    log('  Start a new pi session to load the five-role-team skill.');
+  }
+  for (const id of s.shadowIds) {
+    log('  Warning: the marketplace copy ' + id + ' takes precedence over this install, so the new install will not load.');
+    log('  To remove the marketplace copy, run: claude plugin uninstall ' + id + ' (the installer does not uninstall anything).');
   }
 }
 
@@ -1106,7 +1160,7 @@ async function main(argv = args, options = {}) {
         harness: parsed.harness,
       });
       tx.primary = resolved.primary;
-      logCopyPlan(installSet, log);
+      if (parsed.verbose) logCopyPlan(installSet, log);
       const written = copyInstall(sourceDir, resolved.primary, installSet, result.models);
       log('Installed ' + written.files.length + ' files to ' + written.target);
       // Written inside the copied plugin dir, so rollback (tx.primary) covers it.
@@ -1151,6 +1205,10 @@ async function main(argv = args, options = {}) {
     harness: parsed.harness,
     selectedAgents: result.selectedAgents,
     models: result.models,
+  });
+  logNextSteps(log, {
+    harness: parsed.harness,
+    shadowIds: parsed.harness === 'claude-code' ? findShadowingPluginIds() : [],
   });
   return result;
 }

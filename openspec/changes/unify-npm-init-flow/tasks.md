@@ -60,7 +60,7 @@
 
 ## 4. Install output
 
-- [ ] 4.1 Change install output (design D7, D8):
+- [x] 4.1 Change install output (design D7, D8):
   - `logCopyPlan` only with `--verbose`.
   - The success summary keeps path, harness and agents/models, followed by a "Next steps" block. For claude-code: start Claude Code from the project root or `/reload-plugins`, `/five-role-team:apply`, the `CLAUDE.md` pointer. For pi: a generic line.
   - For claude-code, read `$HOME/.claude/plugins/installed_plugins.json` read-only. Any `five-role-team@<origin>` other than `skills-dir` adds a warning naming `claude plugin uninstall <that id>`. A missing, unreadable or unexpected file means no warning and no error.
