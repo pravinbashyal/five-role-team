@@ -172,21 +172,19 @@ function parseArgs(argv) {
     parsed.local = true;
   }
 
-  // Validate that exactly one of --global or --local is provided (task 2.2)
-  // However, skip this validation if --help is provided
+  // --global and --local are mutually exclusive (task 2.2). A missing scope is
+  // NOT an error here: `init` defaults to local, and other forms prompt for it
+  // on a TTY or fail with a hint without one (handled in main()).
   if (!argv.includes('--help') && !argv.includes('-h')) {
-    if (!parsed.global && !parsed.local) {
-      parsed.errors.push('Either --global or --local must be specified');
-    } else if (parsed.global && parsed.local) {
+    if (parsed.global && parsed.local) {
       parsed.errors.push('--global and --local are mutually exclusive; specify only one');
     }
   }
 
-  // --harness is required (design Decision 2) for install and uninstall alike.
-  // If the flag was given without a value, that error was already recorded.
-  if (!argv.includes('--help') && !argv.includes('-h') && !parsed.harness && !argv.includes('--harness')) {
-    parsed.errors.push('--harness is required (harness name or path, e.g. --harness pi)');
-  }
+  // --harness is required (design Decision 2) for install and uninstall alike;
+  // the `--harness <value>` value check already ran in the loop above. A wholly
+  // missing --harness is NOT an error here either: it is prompted on a TTY and
+  // fails with a hint without one (handled in main()).
 
   return parsed;
 }
@@ -514,6 +512,69 @@ function logInstallSummary(log, s) {
 }
 
 /**
+ * Prompt for a missing installation scope on a TTY (select global or local).
+ *
+ * @param {object} [options]
+ * @param {object} [options.promptsImpl] - Injectable prompts module for tests
+ * @returns {Promise<'global'|'local'|null>} chosen scope, or null on cancel
+ */
+async function promptScopeSelection(options = {}) {
+  const promptsImpl = (options && options.promptsImpl) || (typeof prompts !== 'undefined' ? prompts : require('prompts'));
+  let cancelled = false;
+  const response = await promptsImpl(
+    {
+      type: 'select',
+      name: 'scope',
+      message: 'Select installation scope:',
+      choices: [
+        { title: 'Global (user-wide install)', value: 'global' },
+        { title: 'Local (project directory)', value: 'local' },
+      ],
+    },
+    { onCancel: () => { cancelled = true; return true; } }
+  );
+  if (cancelled || !response) return null;
+  return response.scope === 'global' || response.scope === 'local' ? response.scope : null;
+}
+
+/**
+ * Prompt for a missing harness on a TTY (select pi / claude-code / custom path).
+ *
+ * @param {object} [options]
+ * @param {object} [options.promptsImpl] - Injectable prompts module for tests
+ * @returns {Promise<string|null>} chosen harness string, or null on cancel
+ */
+async function promptHarnessSelection(options = {}) {
+  const promptsImpl = (options && options.promptsImpl) || (typeof prompts !== 'undefined' ? prompts : require('prompts'));
+  let cancelled = false;
+  const response = await promptsImpl(
+    {
+      type: 'select',
+      name: 'harness',
+      message: 'Select harness:',
+      choices: [
+        { title: 'pi', value: 'pi' },
+        { title: 'claude-code', value: 'claude-code' },
+        { title: 'Custom path', value: '__custom__' },
+      ],
+    },
+    { onCancel: () => { cancelled = true; return true; } }
+  );
+  if (cancelled || !response) return null;
+  if (response.harness === 'pi' || response.harness === 'claude-code') return response.harness;
+  if (response.harness !== '__custom__') return null;
+  let cCancelled = false;
+  const cResponse = await promptsImpl(
+    { type: 'text', name: 'path', message: 'Custom harness path:' },
+    { onCancel: () => { cCancelled = true; return true; } }
+  );
+  if (cCancelled || !cResponse) return null;
+  const p = cResponse.path;
+  if (typeof p !== 'string' || p.trim().length === 0) return null;
+  return p.trim();
+}
+
+/**
  * Main installation logic: argument validation, agent selection, model
  * configuration, then file installation (copy or --link, pi secondary link,
  * existing-install handling with backup/rollback). The `uninstall` subcommand
@@ -531,6 +592,7 @@ function logInstallSummary(log, s) {
  * @param {string[]} [argv] - Arguments (defaults to process.argv.slice(2))
  * @param {object} [options]
  * @param {object} [options.promptsImpl] - Injectable prompts module for tests
+ * @param {boolean} [options.isTTY] - Test-only override for the interactive (TTY) signal
  * @param {string} [options.sourceDir] - Plugin source root for default models
  * @param {function} [options.log] - stdout logger (default console.log)
  * @param {function} [options.error] - stderr logger (default console.error)
@@ -549,10 +611,50 @@ async function main(argv = args, options = {}) {
   };
 
   const parsed = parseArgs(argv);
-  
+
   // Check for parsing and validation errors
   if (parsed.errors.length > 0) {
     return fail('Error parsing arguments:', ...parsed.errors.map(err => '  - ' + err));
+  }
+
+  // TTY signal (real or explicitly injected for tests) drives interactive
+  // scope/harness prompting; an injected promptsImpl alone does not.
+  const interactive = !!(options.isTTY || (process.stdin && process.stdin.isTTY));
+
+  const cancel = () => {
+    log('Installation cancelled.');
+    result.cancelled = true;
+    result.selectedAgents = null;
+    result.models = null;
+    return result;
+  };
+
+  // Prompt for missing scope (not for `init`) and harness on a TTY (task 2.2).
+  // Without a TTY (and no injected prompts) fail with a hint instead of prompting.
+  if (!argv.includes('--help') && !argv.includes('-h')) {
+    if (!parsed.init && !parsed.global && !parsed.local) {
+      if (!interactive) {
+        return fail(
+          'Error: --global or --local is required (installation scope).',
+          '  Hint: re-run with --global or --local, e.g. node install.js --global --harness pi'
+        );
+      }
+      const scope = await promptScopeSelection({ promptsImpl: options.promptsImpl });
+      if (scope === null) return cancel();
+      if (scope === 'global') parsed.global = true;
+      else parsed.local = true;
+    }
+    if (!parsed.harness) {
+      if (!interactive) {
+        return fail(
+          'Error: --harness is required (harness name or path, e.g. --harness pi)',
+          '  Hint: re-run with --harness, e.g. --harness claude-code'
+        );
+      }
+      const h = await promptHarnessSelection({ promptsImpl: options.promptsImpl });
+      if (h === null) return cancel();
+      parsed.harness = h;
+    }
   }
 
   // The plugin source (the directory install.js sits in) must be a five-role-team
@@ -638,14 +740,6 @@ async function main(argv = args, options = {}) {
       '  node install.js --global --harness pi --agents architect,worker --agent-models "worker=sonnet"'
     );
   }
-  const cancel = () => {
-    log('Installation cancelled.');
-    result.cancelled = true;
-    result.selectedAgents = null;
-    result.models = null;
-    return result;
-  };
-
   try {
     // Agent selection (section 3)
     let selectedAgents;
@@ -827,6 +921,8 @@ module.exports = {
   resolveHarnessPath,
   readDefaultModels,
   confirmOverwrite,
+  promptScopeSelection,
+  promptHarnessSelection,
   AGENT_CATALOG,
   buildAgentSelectChoices,
   buildAgentSelectPromptQuestion,
