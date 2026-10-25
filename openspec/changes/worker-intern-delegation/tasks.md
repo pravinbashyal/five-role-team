@@ -14,7 +14,7 @@
   - each rule listed above appears in the worker prompt (show with `grep -n`)
   - the `git diff` of both intern files touches only caller-framing text
 
-- [ ] 1.2 Ship pi worker. Create `pi/agents/worker.md`:
+- [x] 1.2 Ship pi worker. Create `pi/agents/worker.md`:
   - frontmatter: `name: worker`, the same description, `tools: read, edit, write, bash, grep, subagent`, `allowedAgents: intern`, and a `model:` line
   - body: identical to the post-1.1 `agents/worker.md` body, except that the instruction-only note is replaced with a statement that pi enforces the restriction through `allowedAgents`
 

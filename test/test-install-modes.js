@@ -29,8 +29,8 @@
 //   - copy: the primary is a real directory; agents/ lists exactly the expected agents; each
 //     installed agent file and .agent-config.json carry the expected model (worker=sonnet
 //     expanded in "all", source defaults otherwise); .agent-config.json lists exactly the
-//     expected agents with the right harness; pi/agents/intern.md is present only for pi + all,
-//     and pi/ is absent in every other copy cell
+//     expected agents with the right harness; pi/agents/ lists exactly the selected pi-only agents
+//     (intern and worker) for pi cells, with their models; pi/ is absent in every claude-code copy cell
 //   - link: the primary is a symlink resolving to the source copy; agents/ lists the same files
 //     as the source agents/ (agent choice is not applied in symlink mode); no .agent-config.json
 //     in the link or in the source
@@ -73,6 +73,9 @@ const SUPPORTED = Object.freeze({
   'claude-code': ['architect', 'designer', 'intern', 'reviewer', 'supervisor', 'worker'],
   pi: ['architect', 'designer', 'intern', 'reviewer', 'supervisor', 'worker'],
 });
+
+// Agents that ship a pi-only file at pi/agents/<id>.md (installed for pi only, when selected).
+const PI_AGENTS = Object.freeze(['intern', 'worker']);
 
 // Same expansion as configure-models.js MODEL_ALIASES.
 const MODEL_FULL = Object.freeze({
@@ -206,13 +209,18 @@ function runCell(sb, cell) {
       need(fm === models[id], `frontmatter: ${id} model is ${models[id]} (got ${fm})`);
     }
 
-    if (cell.harness === 'pi' && cell.agents === 'all') {
-      const piIntern = path.join(primary, 'pi', 'agents', 'intern.md');
-      const ist = lstat(piIntern);
-      need(ist !== null && ist.isFile(), 'pi + all: pi/agents/intern.md installed');
-      need(readModel(piIntern) === models.intern, `pi + all: pi/agents/intern.md model is ${models.intern}`);
+    // pi-only agent files follow agent selection: pi/agents/<id>.md for each selected id in PI_AGENTS.
+    const piAgents = cell.harness === 'pi' ? sorted(PI_AGENTS.filter((id) => expectedAgents.includes(id))) : [];
+    if (piAgents.length > 0) {
+      const piAgentsDir = path.join(primary, 'pi', 'agents');
+      const gotPi = listMd(piAgentsDir);
+      need(sameList(gotPi, piAgents), `pi: pi/agents/ lists exactly ${piAgents.join(',')} (got ${gotPi.join(',')})`);
+      for (const id of piAgents) {
+        const pfm = readModel(path.join(piAgentsDir, `${id}.md`));
+        need(pfm === models[id], `pi: pi/agents/${id}.md model is ${models[id]} (got ${pfm})`);
+      }
     } else {
-      need(!present(path.join(primary, 'pi')), 'pi/ directory absent (not pi + all)');
+      need(!present(path.join(primary, 'pi')), 'pi/ directory absent (claude-code, or no pi-only agent selected)');
     }
   } else {
     need(pstat !== null && pstat.isSymbolicLink(), 'link: primary is a symlink');
@@ -227,15 +235,57 @@ function runCell(sb, cell) {
   return { ok: problems.length === 0, checks, problems };
 }
 
+// Extra check outside the 16-cell matrix: a pi copy install with `--agents intern` must ship
+// pi/agents/intern.md and must omit pi/agents/worker.md (worker not selected).
+function runPiInternOnly(sb) {
+  const problems = [];
+  let checks = 0;
+  const need = (cond, msg) => {
+    checks += 1;
+    if (!cond) problems.push(msg);
+  };
+
+  const sc = sb.scenario('pi-agents-intern-only');
+  const src = path.join(sc.cwd, 'plugin-src');
+  copyPluginSource(src, SOURCE);
+  const argv = [path.join(src, 'install.js'), 'init', '--local', '--harness', 'pi', '--agents', 'intern'];
+  const r = sb.run(argv, { home: sc.home, cwd: sc.cwd });
+  need(r.status === 0, `exit 0 (got ${r.status}): ${r.stderr.trim().split('\n').slice(-2).join(' | ')}`);
+  if (r.status !== 0) return { ok: false, checks, problems };
+
+  const primary = path.join(sc.cwd, '.pi', 'skills', 'five-role-team');
+  need(sameList(listMd(path.join(primary, 'agents')), ['intern']), 'agents/ lists exactly intern');
+  need(sameList(listMd(path.join(primary, 'pi', 'agents')), ['intern']),
+    `pi/agents/ lists exactly intern (got ${listMd(path.join(primary, 'pi', 'agents')).join(',')})`);
+  need(!present(path.join(primary, 'pi', 'agents', 'worker.md')), 'pi/agents/worker.md is NOT installed');
+  return { ok: problems.length === 0, checks, problems };
+}
+
 function main() {
   const sb = createSandbox();
   const ran = [];
   let passed = 0;
   let failed = 0;
+  let extraFailed = 0;
   let coverageOk = true;
   const coverageFail = (msg) => { coverageOk = false; console.log(`FAIL coverage: ${msg}`); };
 
   try {
+    {
+      let res;
+      try {
+        res = runPiInternOnly(sb);
+      } catch (err) {
+        res = { ok: false, checks: 0, problems: [`unexpected error: ${err && err.message ? err.message : err}`] };
+      }
+      if (res.ok) {
+        console.log(`PASS extra pi/copy/local/--agents intern (${res.checks} checks)`);
+      } else {
+        extraFailed += 1;
+        console.log('FAIL extra pi/copy/local/--agents intern');
+        res.problems.forEach((p) => console.log(`  - ${p}`));
+      }
+    }
     for (const cell of MATRIX) {
       let res;
       try {
@@ -271,7 +321,7 @@ function main() {
   if (coverageOk) console.log(`COVERAGE: ok, every one of the ${EXPECTED_CELLS} cells was exercised`);
 
   console.log(`SUMMARY: exercised ${ran.length} of ${EXPECTED_CELLS} install modes; ${passed} passed, ${failed} failed`);
-  const ok = failed === 0 && coverageOk && ran.length === EXPECTED_CELLS;
+  const ok = failed === 0 && extraFailed === 0 && coverageOk && ran.length === EXPECTED_CELLS;
   // exitCode rather than process.exit(): exit() can drop buffered output on pipes.
   process.exitCode = ok ? 0 : 1;
 }
