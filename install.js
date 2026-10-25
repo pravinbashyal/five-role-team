@@ -57,29 +57,23 @@ function parseArgs(argv) {
     force: false,
     uninstall: false,
     init: false,
-    installAlias: false,
-    command: null,
     agents: null,
     agentModels: {},
     errors: []
   };
 
-  // `init`, `install` (alias) and `uninstall` are optional subcommands, so they
+  // `init`, `install` (alias) and uninstall are optional subcommands, so they
   // are only recognised as the first argument. `init` installs into the current
   // project directory (local scope by default, `--global` overrides); `install`
   // is an alias. The bare form (no subcommand) still installs as before.
   let tokens = argv;
   if (argv[0] === 'init') {
     parsed.init = true;
-    parsed.command = 'init';
     tokens = argv.slice(1);
   } else if (argv[0] === 'install') {
-    parsed.installAlias = true;
-    parsed.command = 'install';
     tokens = argv.slice(1);
   } else if (argv[0] === 'uninstall') {
     parsed.uninstall = true;
-    parsed.command = 'uninstall';
     tokens = argv.slice(1);
   }
 
@@ -107,7 +101,7 @@ function parseArgs(argv) {
       // Handled before parsing (see the early --help check); accepted here so it
       // is not reported as an unknown flag.
     } else if (arg === 'uninstall') {
-      // Reached only when `uninstall` is not the first argument (index 0 is
+      // Reached only when uninstall is not the first argument (index 0 is
       // stripped above). Rejected so it cannot silently fall through to an install.
       parsed.errors.push('uninstall must be the first argument (node install.js uninstall --global|--local --harness <name|path>)');
     } else if (arg === '--agents') {
@@ -160,7 +154,7 @@ function parseArgs(argv) {
       parsed.errors.push(`Unknown flag: ${arg} (run "node install.js --help" for usage)`);
     } else {
       // Any bare token that is not a recognised flag, a consumed flag value, or the
-      // leading `uninstall` (e.g. a typo such as `uninstal`) is an error. The grammar
+      // leading uninstall (e.g. a typo such as `uninstal`) is an error. The grammar
       // has no other positional arguments, so it must not silently fall through to an install.
       parsed.errors.push(`Unknown argument: ${arg} (run "node install.js --help" for usage)`);
     }
@@ -173,7 +167,7 @@ function parseArgs(argv) {
   }
 
   // --global and --local are mutually exclusive (task 2.2). A missing scope is
-  // NOT an error here: `init` defaults to local, and other forms prompt for it
+  // NOT an error here: init defaults to local, and other forms prompt for it
   // on a TTY or fail with a hint without one (handled in main()).
   if (!argv.includes('--help') && !argv.includes('-h')) {
     if (parsed.global && parsed.local) {
@@ -185,6 +179,18 @@ function parseArgs(argv) {
   // the `--harness <value>` value check already ran in the loop above. A wholly
   // missing --harness is NOT an error here either: it is prompted on a TTY and
   // fails with a hint without one (handled in main()).
+
+  // `uninstall` never prompts: restore the pre-task-2.2 required-flag errors so
+  // a missing scope or harness is rejected at parse time (exit 1), exactly as
+  // `git show 118042f:install.js` did.
+  if (parsed.uninstall) {
+    if (!parsed.global && !parsed.local) {
+      parsed.errors.push('Either --global or --local must be specified');
+    }
+    if (!parsed.harness) {
+      parsed.errors.push('--harness is required (harness name or path, e.g. --harness pi)');
+    }
+  }
 
   return parsed;
 }
@@ -328,18 +334,18 @@ Five-Role Team Plugin Installer
 USAGE:
   node install.js [init|install] [OPTIONS]
   node install.js init [OPTIONS]        Install into current project (local scope by default; --global overrides)
-  node install.js install [OPTIONS]     Alias for init
-  node install.js [OPTIONS]            Bare form (still installs; scope and harness as given)
+  node install.js install [OPTIONS]     Same as the bare form; prompts for scope if omitted
+  node install.js [OPTIONS]            Bare form (installs; prompts for missing scope/harness on a TTY, fails with a hint without one)
   node install.js uninstall --global|--local --harness <name|path>
 
 OPTIONS:
   --help, -h              Show this help message
 
-  INSTALLATION SCOPE (required, mutually exclusive):
+  INSTALLATION SCOPE (prompted on a TTY if omitted; init defaults to local; required, never prompted for uninstall):
   --global                Install to global skills directory (~/.claude/skills/; pi also symlinks from ~/.pi/agent/skills/)
   --local                 Install to local project skills directory (./.claude/skills/ or ./.pi/skills/)
 
-  HARNESS (required):
+  HARNESS (prompted on a TTY if omitted; required, never prompted for uninstall):
   --harness <name|path>   Target harness: 'pi', 'claude-code', or custom path
                           - pi: Installs to ~/.claude/skills/ with symlink from ~/.pi/agent/skills/
                           - claude-code: Installs to ~/.claude/skills/
@@ -358,6 +364,7 @@ OPTIONS:
                           no effect. Unknown flags or arguments are an error (exit 1).
 
   INTERACTIVE MODE (default):
+  - Prompts for installation scope if omitted (except init, which defaults to local) and harness if omitted
   - Prompts for agent selection (architect, designer, worker, reviewer, supervisor, intern)
   - Prompts for model configuration for each selected agent
 
@@ -577,7 +584,7 @@ async function promptHarnessSelection(options = {}) {
 /**
  * Main installation logic: argument validation, agent selection, model
  * configuration, then file installation (copy or --link, pi secondary link,
- * existing-install handling with backup/rollback). The `uninstall` subcommand
+ * existing-install handling with backup/rollback). The uninstall subcommand
  * is handled before any prompt and never asks anything.
  *
  * Selection rules:
@@ -629,27 +636,23 @@ async function main(argv = args, options = {}) {
     return result;
   };
 
+  // uninstall never prompts; missing scope/harness are rejected in parseArgs above.
+
   // Prompt for missing scope (not for `init`) and harness on a TTY (task 2.2).
   // Without a TTY (and no injected prompts) fail with a hint instead of prompting.
   if (!argv.includes('--help') && !argv.includes('-h')) {
-    if (!parsed.init && !parsed.global && !parsed.local) {
+    if (!parsed.uninstall && !parsed.init && !parsed.global && !parsed.local) {
       if (!interactive) {
-        return fail(
-          'Error: --global or --local is required (installation scope).',
-          '  Hint: re-run with --global or --local, e.g. node install.js --global --harness pi'
-        );
+        return fail('Error: --global or --local is required (installation scope).\n  Hint: re-run with --global or --local, e.g. node install.js --global --harness pi');
       }
       const scope = await promptScopeSelection({ promptsImpl: options.promptsImpl });
       if (scope === null) return cancel();
       if (scope === 'global') parsed.global = true;
       else parsed.local = true;
     }
-    if (!parsed.harness) {
+    if (!parsed.uninstall && !parsed.harness) {
       if (!interactive) {
-        return fail(
-          'Error: --harness is required (harness name or path, e.g. --harness pi)',
-          '  Hint: re-run with --harness, e.g. --harness claude-code'
-        );
+        return fail('Error: --harness is required (harness name or path, e.g. --harness pi)\n  Hint: re-run with --harness, e.g. --harness claude-code');
       }
       const h = await promptHarnessSelection({ promptsImpl: options.promptsImpl });
       if (h === null) return cancel();

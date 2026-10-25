@@ -218,6 +218,98 @@ function assert(c, m) { if (c) console.log('OK:', m); else { console.error('FAIL
       assert(fs.existsSync(path.join(sc.cwd, '.pi', 'skills', 'five-role-team', 'SKILL.md')), 'init local target');
     }
 
+  // parse-level checks (task 2.1) and uninstall invariance
+  {
+    const { parseArgs } = require(INSTALL);
+    const initParsed = parseArgs(['init']);
+    assert(initParsed.init === true && initParsed.local === true && initParsed.global === false, 'parse: init defaults to local');
+    const installParsed = parseArgs(['install', '--global', '--harness', 'pi']);
+    assert(installParsed.uninstall === false && installParsed.global === true && installParsed.harness === 'pi', 'parse: install accepted as subcommand');
+    const bareParsed = parseArgs(['--global', '--harness', 'pi']);
+    assert(bareParsed.uninstall === false && bareParsed.global === true && bareParsed.harness === 'pi', 'parse: bare form accepted');
+    const uninstallParsed = parseArgs(['uninstall', '--global', '--harness', 'pi']);
+    assert(uninstallParsed.uninstall === true, 'parse: uninstall recognized');
+    const badInit = parseArgs(['--global', 'init']);
+    assert(badInit.errors.length > 0, 'parse: init not in first position is rejected');
+    const badInstall = parseArgs(['--global', 'install']);
+    assert(badInstall.errors.length > 0, 'parse: install not in first position is rejected');
+  }
+
+  // uninstall: never prompts, fails on missing flags
+  {
+    const sc = sb.scenario('uninstall-missing-scope');
+    const r = sb.run([INSTALL, 'uninstall', '--harness', 'pi'], { home: sc.home, cwd: sc.cwd });
+    assert(r.status === 1, 'uninstall missing scope exits 1');
+    assert(r.stderr.includes('Error parsing arguments:\n  - Either --global or --local must be specified'), 'uninstall missing scope exact message');
+  }
+  {
+    const sc = sb.scenario('uninstall-missing-harness');
+    const r = sb.run([INSTALL, 'uninstall', '--global'], { home: sc.home, cwd: sc.cwd });
+    assert(r.status === 1, 'uninstall missing harness exits 1');
+    assert(r.stderr.includes('Error parsing arguments:\n  - --harness is required (harness name or path, e.g. --harness pi)'), 'uninstall missing harness exact message');
+  }
+  {
+    const sc = sb.scenario('uninstall-tty-noprompt');
+    sb.enter(sc);
+    const { main } = require(INSTALL);
+    const asked = [];
+    const res = await main(['uninstall', '--global', '--harness', 'claude-code'], { isTTY: true, promptsImpl: async (q) => { asked.push(q.name); return {}; }, log: () => {}, error: () => {} });
+    assert(Array.isArray(asked) && asked.length === 0, 'uninstall never calls prompt on TTY');
+  }
+  {
+    const sc = sb.scenario('uninstall-tty-missing-scope');
+    sb.enter(sc);
+    const { main } = require(INSTALL);
+    const asked = [];
+    const res = await main(['uninstall', '--harness', 'claude-code'], { isTTY: true, promptsImpl: async (q) => { asked.push(q.name); return { scope: 'local' }; }, log: () => {}, error: () => {} });
+    assert(res.exitCode === 1, 'uninstall missing scope on TTY exits 1');
+    assert(asked.length === 0, 'uninstall missing scope does not prompt on TTY');
+  }
+  {
+    const sc = sb.scenario('uninstall-tty-missing-harness');
+    sb.enter(sc);
+    const { main } = require(INSTALL);
+    const asked = [];
+    const res = await main(['uninstall', '--global'], { isTTY: true, promptsImpl: async (q) => { asked.push(q.name); return { harness: 'pi' }; }, log: () => {}, error: () => {} });
+    assert(res.exitCode === 1, 'uninstall missing harness on TTY exits 1');
+    assert(asked.length === 0, 'uninstall missing harness does not prompt on TTY');
+  }
+
+  // uninstall: neither flags exact errors
+  {
+    const sc = sb.scenario('uninstall-neither');
+    const r = sb.run([INSTALL, 'uninstall'], { home: sc.home, cwd: sc.cwd });
+    assert(r.status === 1, 'uninstall neither exits 1');
+    assert(r.stderr.includes('Error parsing arguments:\n  - Either --global or --local must be specified\n  - --harness is required (harness name or path, e.g. --harness pi)'), 'uninstall neither exact message');
+  }
+  // uninstall: unknown flag + missing flags keeps unknown listed (here unknown only since flags present)
+  {
+    const sc = sb.scenario('uninstall-unknown');
+    const r = sb.run([INSTALL, 'uninstall', '--badarg'], { home: sc.home, cwd: sc.cwd });
+    assert(r.status === 1, 'uninstall unknown exits 1');
+    assert(r.stderr.includes('Error parsing arguments:\n  - Unknown flag: --badarg'), 'uninstall unknown arg listed');
+  }
+  // data-loss guard: failed uninstall leaves existing local install intact
+  {
+    const sc = sb.scenario('uninstall-dataloss');
+    sb.run([INSTALL, 'install', '--local', '--harness', 'pi', '--agents', 'worker', '--agent-models', 'worker=sonnet'], { home: sc.home, cwd: sc.cwd });
+    const before = fs.existsSync(path.join(sc.cwd, '.pi', 'skills', 'five-role-team', 'SKILL.md'));
+    const r = sb.run([INSTALL, 'uninstall', '--harness', 'pi'], { home: sc.home, cwd: sc.cwd });
+    assert(r.status === 1, 'dataloss uninstall exits 1');
+    assert(before && fs.existsSync(path.join(sc.cwd, '.pi', 'skills', 'five-role-team', 'SKILL.md')), 'existing install preserved after failed uninstall');
+  }
+
+  // help text
+  {
+    const help = require('child_process').spawnSync(process.execPath, [INSTALL, '--help'], { encoding: 'utf8' });
+    const text = (help.stdout || '') + (help.stderr || '');
+    assert(/prompts for installation scope if omitted/i.test(text), 'help: scope prompt mention');
+    assert(/required, never prompted for uninstall/i.test(text), 'help: uninstall scope never prompted');
+    assert(/Same as the bare form; prompts for scope if omitted/i.test(text), 'help: install described as bare form');
+    assert(/prompts for missing scope\/harness on a TTY/i.test(text), 'help: bare form prompts');
+    assert(/Prompts for installation scope if omitted/i.test(text), 'help: interactive mode scope prompt');
+  }
+
   } catch (err) {
     console.error('FAIL: unexpected error', err);
     failed += 1;
