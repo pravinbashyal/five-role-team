@@ -588,21 +588,25 @@ async function promptScopeSelection(options = {}) {
  *
  * @param {object} [options]
  * @param {object} [options.promptsImpl] - Injectable prompts module for tests
+ * @param {string} [options.initial] - Harness to preselect ('pi' or 'claude-code'), e.g. the detected one
  * @returns {Promise<string|null>} chosen harness string, or null on cancel
  */
 async function promptHarnessSelection(options = {}) {
   const promptsImpl = (options && options.promptsImpl) || (typeof prompts !== 'undefined' ? prompts : require('prompts'));
+  const choices = [
+    { title: 'pi', value: 'pi' },
+    { title: 'claude-code', value: 'claude-code' },
+    { title: 'Custom path', value: '__custom__' },
+  ];
+  const initialIndex = options && options.initial ? choices.findIndex(c => c.value === options.initial) : -1;
   let cancelled = false;
   const response = await promptsImpl(
     {
       type: 'select',
       name: 'harness',
       message: 'Select harness:',
-      choices: [
-        { title: 'pi', value: 'pi' },
-        { title: 'claude-code', value: 'claude-code' },
-        { title: 'Custom path', value: '__custom__' },
-      ],
+      choices,
+      ...(initialIndex >= 0 ? { initial: initialIndex } : {}),
     },
     { onCancel: () => { cancelled = true; return true; } }
   );
@@ -620,19 +624,195 @@ async function promptHarnessSelection(options = {}) {
   return p.trim();
 }
 
+// Marker returned by askQuestion when the user cancelled (Ctrl-C, Esc) or no answer came back.
+const CANCELLED = Symbol('cancelled');
+
+/**
+ * Ask one prompts question and return its answer, or CANCELLED. The answer is
+ * read from the question's own name, so a response without that key counts as a cancel.
+ *
+ * @param {function} promptsImpl - prompts module (or an injected stand-in)
+ * @param {object} question - prompts question object (must have a `name`)
+ * @returns {Promise<*|CANCELLED>}
+ */
+async function askQuestion(promptsImpl, question) {
+  let cancelled = false;
+  const response = await promptsImpl(question, { onCancel: () => { cancelled = true; return true; } });
+  if (cancelled || !response || !Object.prototype.hasOwnProperty.call(response, question.name)) {
+    return CANCELLED;
+  }
+  return response[question.name];
+}
+
+/**
+ * Replace the home directory prefix of an absolute path with `~` (display only).
+ *
+ * @param {string} p - Absolute path
+ * @returns {string}
+ */
+function tildePath(p) {
+  const home = os.homedir();
+  if (p === home) return '~';
+  if (p.startsWith(home + path.sep)) return '~' + p.slice(home.length);
+  return p;
+}
+
+/**
+ * Scope question shared by Default and Custom (design D3). Both choices show the
+ * real install path for the harness in effect; "This project" is preselected.
+ *
+ * @param {string} harness - Harness in effect at this question (flag or detected)
+ * @returns {object} prompts select question, name 'scope', values 'local' | 'global'
+ */
+function buildScopeQuestion(harness) {
+  const localPath = path.resolve(resolveHarnessPath(harness, false).primary);
+  const globalPath = tildePath(path.resolve(resolveHarnessPath(harness, true).primary));
+  return {
+    type: 'select',
+    name: 'scope',
+    message: 'Where should five-role-team be installed?',
+    choices: [
+      { title: `This project (${localPath})`, value: 'local' },
+      { title: `All projects for this user (${globalPath})`, value: 'global' },
+    ],
+    initial: 0,
+  };
+}
+
+/** First terminal question of `init` (design D1): Default (recommended) or Custom. */
+function buildSetupQuestion() {
+  return {
+    type: 'select',
+    name: 'setup',
+    message: 'How do you want to set up five-role-team?',
+    choices: [
+      { title: 'Default (recommended)', value: 'default' },
+      { title: 'Custom', value: 'custom' },
+    ],
+    initial: 0,
+  };
+}
+
+/** Custom only: one question for all selected agents (design D4). */
+function buildKeepDefaultsQuestion() {
+  return { type: 'confirm', name: 'keepDefaults', message: 'Keep default models? (Y/n)', initial: true };
+}
+
+/** Custom only: confirmation after the review (design D1). */
+function buildInstallQuestion() {
+  return { type: 'confirm', name: 'install', message: 'Install? (Y/n)', initial: true };
+}
+
+/**
+ * Terminal questions for `init` without --default or --link (task 3.1, design D1, D3, D4).
+ *
+ * Prints the default setup first, then asks Default/Custom:
+ * - Default: scope only (unless --global/--local), then the default setup.
+ * - Custom: scope, harness (unless --harness; detected one preselected), agents (unless
+ *   --agents), "Keep default models?" (per-agent prompts only on No, skipped when
+ *   --agent-models is given), then a review and "Install?".
+ * Flags skip only their own question. Nothing is written here; the caller installs.
+ *
+ * @param {object} parsed - parseArgs result; `harness`, `global` and `local` are filled in
+ * @param {object} ctx
+ * @param {string[]} ctx.agentIds - Agents from --agents, or every agent when --agents is not given
+ * @param {boolean} ctx.agentsGiven - True when --agents was typed (skips the agent question)
+ * @param {boolean} ctx.scopeGiven - True when --global or --local was typed
+ * @param {string} ctx.sourceDir - Plugin source root (frontmatter defaults)
+ * @param {function} ctx.log - stdout logger
+ * @param {function} ctx.promptsImpl - prompts module (or an injected stand-in)
+ * @returns {Promise<{cancelled: true}|{cancelled: false, selectedAgents: string[], models: object}>}
+ */
+async function runInitTerminalFlow(parsed, ctx) {
+  const { log, promptsImpl, sourceDir, scopeGiven } = ctx;
+  const cancelled = { cancelled: true };
+  const detected = detectDefaultHarness();
+  const defaultAgents = ctx.agentIds;
+  const hasModelFlag = Object.keys(parsed.agentModels).length > 0;
+
+  const defaultModels = resolveAgentModels(defaultAgents, readDefaultModels(defaultAgents, sourceDir), parsed.agentModels);
+  log('Default setup for five-role-team:');
+  log('  Harness: ' + (parsed.harness || detected) + (parsed.harness ? '' : ' (detected from this directory)'));
+  log('  Agents and models:');
+  defaultAgents.forEach(id => log('    ' + id + ': ' + defaultModels[id]));
+
+  const setup = await askQuestion(promptsImpl, buildSetupQuestion());
+  if (setup !== 'default' && setup !== 'custom') return cancelled;
+
+  if (!scopeGiven) {
+    const scope = await askQuestion(promptsImpl, buildScopeQuestion(parsed.harness || detected));
+    if (scope !== 'local' && scope !== 'global') return cancelled;
+    parsed.global = scope === 'global';
+    parsed.local = scope === 'local';
+  }
+
+  if (setup === 'default') {
+    if (!parsed.harness) parsed.harness = detected;
+    return { cancelled: false, selectedAgents: defaultAgents, models: defaultModels };
+  }
+
+  // Custom
+  if (!parsed.harness) {
+    const harness = await promptHarnessSelection({ promptsImpl, initial: detected });
+    if (harness === null) return cancelled;
+    parsed.harness = harness;
+  }
+
+  let selectedAgents = defaultAgents;
+  if (!ctx.agentsGiven) {
+    for (;;) {
+      const picked = await promptAgentSelection({ promptsImpl });
+      if (picked === null) return cancelled;
+      if (picked.length > 0) {
+        selectedAgents = picked;
+        break;
+      }
+      log('Select at least one agent (space to select, return to submit).');
+    }
+  }
+
+  const agentDefaults = readDefaultModels(selectedAgents, sourceDir);
+  let models;
+  if (hasModelFlag) {
+    models = resolveAgentModels(selectedAgents, agentDefaults, parsed.agentModels);
+  } else {
+    const keep = await askQuestion(promptsImpl, buildKeepDefaultsQuestion());
+    if (keep === CANCELLED) return cancelled;
+    if (keep === true) {
+      models = resolveAgentModels(selectedAgents, agentDefaults, {});
+    } else {
+      models = await promptModelConfiguration(selectedAgents, agentDefaults, { promptsImpl });
+      if (models === null) return cancelled;
+    }
+  }
+
+  log('Review:');
+  log('  Harness: ' + parsed.harness);
+  log('  Install path: ' + path.resolve(resolveHarnessPath(parsed.harness, parsed.global).primary));
+  log('  Agents and models:');
+  selectedAgents.forEach(id => log('    ' + id + ': ' + models[id]));
+  const install = await askQuestion(promptsImpl, buildInstallQuestion());
+  if (install !== true) return cancelled;
+
+  return { cancelled: false, selectedAgents, models };
+}
+
 /**
  * Main installation logic: argument validation, agent selection, model
  * configuration, then file installation (copy or --link, pi secondary link,
  * existing-install handling with backup/rollback). The uninstall subcommand
  * is handled before any prompt and never asks anything.
  *
- * Selection rules:
- * - --agents given: resolveSelectedAgents (non-interactive); otherwise, if
- *   --agent-models is given, all agents available for the harness are used
- *   without prompting; otherwise promptAgentSelection runs.
- * - --agent-models given: resolveAgentModels (non-interactive); otherwise
- *   promptModelConfiguration runs (also when only --agents was given).
- * - A null prompt result (user cancel) exits cleanly with code 0.
+ * Question rules (task 3.1, design D1-D5):
+ * - On a terminal, `init` without --default or --link prints the default summary and asks
+ *   Default/Custom first (runInitTerminalFlow). Default asks scope only; Custom asks scope,
+ *   harness, agents, "Keep default models?" and a review with "Install?".
+ * - Scope is asked unless --global/--local is typed; harness and agents only in Custom and
+ *   only without --harness/--agents; the model confirm only without --agent-models.
+ * - --link on a terminal asks scope and harness only (no Default/Custom, agents or models).
+ * - --default never asks anything, with or without a terminal.
+ * - Without a terminal nothing is asked: missing flags exit 1 with a hint.
+ * - Any cancel or decline prints "Installation cancelled. Nothing was changed." and exits 0.
  * - Validation errors are printed as `Error: <message>` with exit code 1.
  *
  * @param {string[]} [argv] - Arguments (defaults to process.argv.slice(2))
@@ -690,46 +870,24 @@ async function main(argv = args, options = {}) {
     parsed.harness = detectDefaultHarness();
   }
 
-  // TTY signal (real or explicitly injected for tests) drives interactive
-  // scope/harness prompting; an injected promptsImpl alone does not.
+  // TTY signal (real or explicitly injected for tests) drives the terminal questions;
+  // an injected promptsImpl alone does not.
   const interactive = !!(options.isTTY || (process.stdin && process.stdin.isTTY));
+  const promptsImpl = options.promptsImpl || prompts;
+  // parseArgs fills in local scope for init, so only the command line says whether the
+  // scope question is skipped.
+  const scopeGiven = argv.includes('--global') || argv.includes('--local');
 
   const cancel = () => {
-    log('Installation cancelled.');
+    log('Installation cancelled. Nothing was changed.');
     result.cancelled = true;
     result.selectedAgents = null;
     result.models = null;
     return result;
   };
 
-  // uninstall never prompts; missing scope/harness are rejected in parseArgs above.
-
-  // Prompt for missing scope (not for `init`) and harness on a TTY (task 2.2).
-  // Without a TTY (and no injected prompts) fail with a hint instead of prompting.
-  if (!argv.includes('--help') && !argv.includes('-h')) {
-    if (!parsed.uninstall && !parsed.init && !parsed.global && !parsed.local) {
-      if (!interactive) {
-        return fail('Error: --global or --local is required (installation scope).\n  Hint: re-run with --global or --local, e.g. five-role-team init --global --harness pi');
-      }
-      const scope = await promptScopeSelection({ promptsImpl: options.promptsImpl });
-      if (scope === null) return cancel();
-      if (scope === 'global') parsed.global = true;
-      else parsed.local = true;
-    }
-    if (!parsed.uninstall && !parsed.harness) {
-      if (!interactive) {
-        return fail('Error: --harness is required (harness name or path, e.g. --harness pi)',
-          '  Hint: run "five-role-team init --default" for the default setup with no questions,',
-          '  or re-run with explicit flags, e.g. five-role-team init --harness claude-code --agents architect,worker');
-      }
-      const h = await promptHarnessSelection({ promptsImpl: options.promptsImpl });
-      if (h === null) return cancel();
-      parsed.harness = h;
-    }
-  }
-
   // The plugin source (the directory install.js sits in) must be a five-role-team
-  // plugin directory (task 8.4). Checked before any prompt or write. Uninstall copies
+  // plugin directory (task 8.4). Checked before any question or write. Uninstall copies
   // nothing from the source and only uses it for the removal safety check, so a
   // missing manifest does not block uninstall.
   if (!parsed.uninstall) {
@@ -740,12 +898,14 @@ async function main(argv = args, options = {}) {
     }
   }
 
-  // Validate the harness resolves before asking anything (missing --harness is
-  // already rejected by parseArgs).
-  try {
-    resolveHarnessPath(parsed.harness, parsed.global);
-  } catch (err) {
-    return fail('Error resolving harness path: ' + err.message);
+  // A harness named on the command line must resolve before anything is asked or written.
+  // A harness picked in the terminal is resolved where it is used.
+  if (parsed.harness !== null) {
+    try {
+      resolveHarnessPath(parsed.harness, parsed.global);
+    } catch (err) {
+      return fail('Error resolving harness path: ' + err.message);
+    }
   }
 
   // Uninstall (task 7.1) needs no agent selection or model configuration, so it
@@ -801,54 +961,81 @@ async function main(argv = args, options = {}) {
   }
 
   const hasModelFlag = Object.keys(parsed.agentModels).length > 0;
-  // --default never asks agent or model questions, with or without a terminal.
-  // Otherwise, with neither --agents nor --agent-models, the agent and model prompts
-  // run. Without a terminal they can never be answered, so refuse up front with a
-  // clear message instead of exiting silently (task 8.3). Injected prompts (tests)
-  // bypass this check.
-  if (!parsed.defaultSetup && parsed.agents === null && !hasModelFlag && !options.promptsImpl && !(process.stdin && process.stdin.isTTY)) {
-    return fail(
-      'Error: No interactive input available: stdin is not a terminal, so the agent and model prompts cannot be answered.',
-      '  Hint: run "five-role-team init --default" for the default setup with no questions, or pass explicit flags, for example:',
-      '  five-role-team init --global --harness pi --agents architect,worker --agent-models "worker=sonnet"'
-    );
+
+  // Without a terminal nothing can be asked (design D5). --default and --link need less:
+  // --default has its harness detected, and --link applies no agent selection. An explicit
+  // install needs --harness plus --agents and/or --agent-models, or it exits 1 with a hint.
+  if (!interactive) {
+    if (parsed.harness === null) {
+      return fail(
+        'Error: --harness is required (harness name or path, e.g. --harness pi)',
+        '  Hint: run "five-role-team init --default" for the default setup with no questions,',
+        '  or re-run with explicit flags, e.g. five-role-team init --harness claude-code --agents architect,worker');
+    }
+    if (!parsed.defaultSetup && !parsed.link && parsed.agents === null && !hasModelFlag) {
+      return fail(
+        'Error: No interactive input available: stdin is not a terminal, so the agent and model prompts cannot be answered.',
+        '  Hint: run "five-role-team init --default" for the default setup with no questions, or pass explicit flags, for example:',
+        '  five-role-team init --global --harness pi --agents architect,worker --agent-models "worker=sonnet"'
+      );
+    }
   }
+
+  // Agent set named by --agents, or every agent (the default bundle). Link mode applies
+  // no agent selection, so it is not resolved there.
+  let agentIds = null;
+  if (!parsed.link) {
+    const resolution = resolveSelectedAgents({ agents: parsed.agents });
+    if (resolution.errors.length > 0) {
+      return fail(...resolution.errors.map(msg => 'Error: ' + msg));
+    }
+    agentIds = resolution.selectedAgents;
+  }
+
   try {
-    // Agent selection (section 3). --default selects every agent unless --agents is given.
-    let selectedAgents;
-    if (parsed.defaultSetup || parsed.agents !== null || hasModelFlag) {
-      const resolution = resolveSelectedAgents({ agents: parsed.agents });
-      if (resolution.errors.length > 0) {
-        return fail(...resolution.errors.map(msg => 'Error: ' + msg));
+    if (parsed.link) {
+      // --link skips Default/Custom, agents and models. Only the questions the flags
+      // leave open are asked: scope, then harness (design D1).
+      if (interactive && !parsed.defaultSetup) {
+        if (!scopeGiven) {
+          const scope = await askQuestion(promptsImpl, buildScopeQuestion(parsed.harness || detectDefaultHarness()));
+          if (scope !== 'local' && scope !== 'global') return cancel();
+          parsed.global = scope === 'global';
+          parsed.local = scope === 'local';
+        }
+        if (!parsed.harness) {
+          const harness = await promptHarnessSelection({ promptsImpl, initial: detectDefaultHarness() });
+          if (harness === null) return cancel();
+          parsed.harness = harness;
+        }
       }
-      selectedAgents = resolution.selectedAgents;
+    } else if (interactive && !parsed.defaultSetup) {
+      // Terminal, no --default: Default/Custom, then scope and the Custom steps (task 3.1).
+      const flow = await runInitTerminalFlow(parsed, {
+        agentIds,
+        agentsGiven: parsed.agents !== null,
+        scopeGiven,
+        sourceDir,
+        log,
+        promptsImpl,
+      });
+      if (flow.cancelled) return cancel();
+      result.selectedAgents = flow.selectedAgents;
+      result.models = flow.models;
     } else {
-      selectedAgents = await promptAgentSelection(promptsOption);
-      if (selectedAgents === null) return cancel();
+      // --default, or explicit flags without a terminal: nothing is asked. --agent-models
+      // overrides the frontmatter defaults (design D5).
+      result.selectedAgents = agentIds;
+      result.models = resolveAgentModels(agentIds, readDefaultModels(agentIds, sourceDir), parsed.agentModels);
     }
-
-    // Model configuration (section 4)
-    const defaults = readDefaultModels(selectedAgents, sourceDir);
-    let models;
-    // Any flag skips the prompt it covers: --agent-models covers models, and
-    // --agents covers both selection and model defaults (no model prompts).
-    // --default uses the frontmatter defaults (with --agent-models overrides) and
-    // never prompts. Only with no flags at all do both prompts run.
-    if (parsed.defaultSetup || hasModelFlag || parsed.agents !== null) {
-      models = resolveAgentModels(selectedAgents, defaults, parsed.agentModels);
-    } else {
-      models = await promptModelConfiguration(selectedAgents, defaults, promptsOption);
-      if (models === null) return cancel();
-    }
-
-    result.selectedAgents = selectedAgents;
-    result.models = models;
   } catch (err) {
     return fail('Error: ' + describeFsError(err));
   }
 
-  log('Selected agents and models:');
-  result.selectedAgents.forEach(id => log('  ' + id + ': ' + result.models[id]));
+  if (!parsed.link) {
+    log('Selected agents and models:');
+    result.selectedAgents.forEach(id => log('  ' + id + ': ' + result.models[id]));
+  }
 
   // File installation (section 5). Uninstall returned earlier.
   // Rollback state: only what THIS run creates is ever removed on failure.

@@ -40,7 +40,7 @@
 
 ## 3. Interactive init flow
 
-- [ ] 3.1 Implement the terminal flow in `main` (design D1, D3, D4) using injected `promptsImpl` for tests:
+- [x] 3.1 Implement the terminal flow in `main` (design D1, D3, D4) using injected `promptsImpl` for tests:
   - Print the default summary, then ask Default/Custom first.
   - Ask the shared scope question with path-labelled choices, "This project" preselected, in both branches unless `--global`/`--local` is given.
   - Custom only: harness with the detected one preselected, the agent multiselect, "Keep default models? (Y/n)" with per-agent prompts only on No, then a review and "Install? (Y/n)".
