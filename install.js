@@ -10,6 +10,7 @@
 const fs = require('fs');
 const path = require('path');
 const os = require('os');
+const { spawnSync } = require('child_process');
 const prompts = require('prompts');
 
 /**
@@ -650,6 +651,105 @@ function logNextSteps(log, s) {
   }
 }
 
+// OpenSpec CLI check (openspec change init-openspec-check, task 1.1, design D1-D6).
+const OPENSPEC_PACKAGE = '@fission-ai/openspec';
+const OPENSPEC_INSTALL_COMMAND = 'npm install -g ' + OPENSPEC_PACKAGE;
+
+/**
+ * Default detection (design D2): the CLI is present when `openspec --version` runs and exits 0.
+ * Spawned without a shell, so no PATH entries are checked by hand.
+ *
+ * @returns {boolean}
+ */
+function detectOpenspecCli() {
+  const r = spawnSync('openspec', ['--version'], { stdio: 'ignore' });
+  return !r.error && r.status === 0;
+}
+
+/**
+ * Default install (design D4): runs the user's own npm with inherited stdio so npm's
+ * progress and errors show. Throws on a spawn error or a non-zero exit.
+ */
+function runOpenspecInstall() {
+  const r = spawnSync('npm', ['install', '-g', OPENSPEC_PACKAGE], { stdio: 'inherit' });
+  if (r.error) throw r.error;
+  if (r.status !== 0) {
+    throw new Error('npm install exited with ' + (r.status === null ? 'signal ' + r.signal : 'status ' + r.status));
+  }
+}
+
+/**
+ * Post-install OpenSpec step (design D1, D3, D4, D6). Runs after the plugin files are written
+ * and before "Next steps". It never throws and never changes the exit status: every outcome
+ * (present, installed, declined, cancelled, failed, warned) leaves the plugin install in place.
+ *
+ * - CLI present: nothing is printed.
+ * - CLI missing and `installOpenspec` (--install-openspec): installs without a question.
+ * - CLI missing on a terminal in the interactive flow (`interactive`): asks, default yes.
+ *   Decline or cancel prints the manual command and continues.
+ * - CLI missing otherwise (no terminal, --default, --link): warns with the install command only.
+ *
+ * @param {object} [options]
+ * @param {function} [options.log] - stdout logger
+ * @param {boolean} [options.interactive] - true only in the interactive terminal flow
+ * @param {boolean} [options.installOpenspec] - --install-openspec: install when missing, no question
+ * @param {object} [options.promptsImpl] - Injectable prompts module for tests
+ * @param {function} [options.detectOpenspec] - Injectable detection; returns true when present
+ * @param {function} [options.runInstall] - Injectable install; throws on failure
+ * @returns {Promise<{status: 'present'|'installed'|'declined'|'failed'|'warned'}>}
+ */
+async function runOpenspecStep(options = {}) {
+  const log = options.log || console.log;
+  const promptsImpl = options.promptsImpl || prompts;
+  const detect = options.detectOpenspec || detectOpenspecCli;
+  const install = options.runInstall || runOpenspecInstall;
+  const installOpenspec = options.installOpenspec === true;
+  const interactive = options.interactive === true;
+
+  const manual = () => log('  Install it with: ' + OPENSPEC_INSTALL_COMMAND);
+  const attemptInstall = () => {
+    try {
+      install();
+    } catch (err) {
+      log('Warning: installing the OpenSpec CLI failed: ' + (err && err.message ? err.message : String(err)));
+      manual();
+      return 'failed';
+    }
+    log('OpenSpec CLI installed with ' + OPENSPEC_INSTALL_COMMAND + '.');
+    log('  If "openspec" is not found in this shell, start a new shell so PATH is refreshed.');
+    return 'installed';
+  };
+
+  try {
+    if (detect()) return { status: 'present' };
+
+    if (installOpenspec) return { status: attemptInstall() };
+
+    if (interactive) {
+      const answer = await askQuestion(promptsImpl, {
+        type: 'confirm',
+        name: 'installOpenspec',
+        message: 'OpenSpec CLI not found. Install it now with `' + OPENSPEC_INSTALL_COMMAND + '`?',
+        initial: true,
+      });
+      // Decline and cancel both leave the plugin install in place and skip the CLI install.
+      if (answer === true) return { status: attemptInstall() };
+      log('OpenSpec CLI is not installed. five-role-team commands need it.');
+      manual();
+      return { status: 'declined' };
+    }
+
+    log('Warning: the OpenSpec CLI (openspec) was not found on PATH. five-role-team commands need it.');
+    manual();
+    return { status: 'warned' };
+  } catch (err) {
+    // Defensive: a failure here must never change the exit status of init.
+    log('Warning: OpenSpec CLI check failed: ' + (err && err.message ? err.message : String(err)));
+    manual();
+    return { status: 'failed' };
+  }
+}
+
 /**
  * Prompt for a missing installation scope on a TTY (select global or local).
  *
@@ -912,6 +1012,8 @@ async function runInitTerminalFlow(parsed, ctx) {
  * @param {object} [options]
  * @param {object} [options.promptsImpl] - Injectable prompts module for tests
  * @param {boolean} [options.isTTY] - Test-only override for the interactive (TTY) signal
+ * @param {function} [options.detectOpenspec] - Test-only override for the OpenSpec CLI check
+ * @param {function} [options.runInstall] - Test-only override for the OpenSpec CLI install
  * @param {string} [options.sourceDir] - Plugin source root for default models
  * @param {function} [options.log] - stdout logger (default console.log)
  * @param {function} [options.error] - stderr logger (default console.error)
@@ -1251,6 +1353,16 @@ async function main(argv = args, options = {}) {
     harness: parsed.harness,
     selectedAgents: result.selectedAgents,
     models: result.models,
+  });
+  // OpenSpec CLI check (task 1.1). Asked only in the interactive flow (terminal, no --default,
+  // no --link); elsewhere it warns only. Never changes result.exitCode.
+  await runOpenspecStep({
+    log,
+    interactive: interactive && !parsed.defaultSetup && !parsed.link,
+    installOpenspec: parsed.installOpenspec === true,
+    promptsImpl,
+    detectOpenspec: options.detectOpenspec,
+    runInstall: options.runInstall,
   });
   logNextSteps(log, {
     harness: parsed.harness,

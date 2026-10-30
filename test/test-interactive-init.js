@@ -22,6 +22,8 @@
 //   - "[interaction] Overwrite confirmation after Default" and re-running through the same flow
 //   - "Install all agents by default", "Accept default models", "Configure architect model"
 //   - "Symlink install for development" (--link asks only scope and harness)
+//   - OpenSpec CLI check after the plugin install (init-openspec-check task 1.1): present, approve,
+//     decline, install fails, cancel; --default and --link warn only; "Next steps" stays last
 //   - "[interaction] Default flag without a terminal" is covered by test-default-setup.js; here
 //     --default in a terminal must also ask nothing
 //
@@ -143,7 +145,9 @@ function scripted(steps, timeline) {
 }
 
 // Run init in-process inside the scenario sandbox. Returns what the run did and asked.
-async function runInit(sb, sc, argv, steps) {
+// The OpenSpec CLI check is injected as present unless `extra` overrides it, so these
+// scenarios never depend on the real machine (task 1.1).
+async function runInit(sb, sc, argv, steps, extra = {}) {
   sb.enter(sc);
   const timeline = [];
   const errors = [];
@@ -153,6 +157,8 @@ async function runInit(sb, sc, argv, steps) {
     promptsImpl: s.impl,
     log: (line) => timeline.push({ kind: 'log', text: String(line) }),
     error: (line) => errors.push(String(line)),
+    detectOpenspec: () => true,
+    ...extra,
   });
   const logs = timeline.filter((e) => e.kind === 'log').map((e) => e.text);
   return {
@@ -498,6 +504,125 @@ async function main_() {
       checkQuestions('overwrite after Default (Yes)', again, ['setup', 'scope', 'overwrite']);
       check('overwrite after Default (Yes): exit 0 with success', again.result.exitCode === 0 && /Installation successful/.test(again.logs), again.errors);
       check('overwrite after Default (Yes): old marker removed, install replaced', !fs.existsSync(marker));
+    }
+
+    // ---- OpenSpec CLI check after the plugin install (init-openspec-check, task 1.1) ----
+    {
+      const OPENSPEC_CMD = 'npm install -g @fission-ai/openspec';
+      const OPENSPEC_MSG = 'OpenSpec CLI not found. Install it now with `' + OPENSPEC_CMD + '`?';
+      const isOpenspecLine = (l) => /OpenSpec CLI|@fission-ai\/openspec/.test(l);
+      const openspecLines = (logs) => logs.split('\n').filter(isOpenspecLine);
+      // "Next steps" stays the last output: it comes after every OpenSpec line, and every line after it is part of the block.
+      const checkNextStepsLast = (label, logs) => {
+        const lines = logs.split('\n');
+        const at = lines.indexOf('Next steps:');
+        const lastOpenspec = lines.reduce((acc, l, i) => (isOpenspecLine(l) ? i : acc), -1);
+        check(`${label}: "Next steps" is the last output`,
+          at !== -1 && lastOpenspec < at && lines.slice(at + 1).every((l) => l.startsWith('  ')), logs);
+      };
+      const pluginInstalled = (sc) => fs.existsSync(path.join(sc.cwd, '.claude', 'skills', 'five-role-team', '.agent-config.json'));
+      const installSpy = () => {
+        const spy = { calls: 0, run() { spy.calls++; } };
+        return spy;
+      };
+      const flow = [{ name: 'setup', answer: 'default' }, { name: 'scope', answer: 'local' }];
+
+      {
+        // "[interaction] CLI already present": no question, no install, no output about it.
+        const sc = sb.scenario('openspec-present');
+        fs.mkdirSync(path.join(sc.cwd, '.claude'));
+        const spy = installSpy();
+        const run = await runInit(sb, sc, ['init'], flow, { detectOpenspec: () => true, runInstall: spy.run });
+        checkQuestions('openspec present', run, ['setup', 'scope']);
+        check('openspec present: no OpenSpec output', openspecLines(run.logs).length === 0, run.logs);
+        check('openspec present: no install attempted', spy.calls === 0, `${spy.calls} calls`);
+        check('openspec present: exit 0', run.result.exitCode === 0, run.errors);
+        checkNextStepsLast('openspec present', run.logs);
+      }
+      {
+        // "[interaction] User approves the install": default yes, asked after the plugin install and before "Next steps".
+        const sc = sb.scenario('openspec-approve');
+        fs.mkdirSync(path.join(sc.cwd, '.claude'));
+        const spy = installSpy();
+        const run = await runInit(sb, sc, ['init'], [...flow, { name: 'installOpenspec', answer: true, check: (q) => {
+          if (q.type !== 'confirm') return `openspec question type was ${q.type}`;
+          if (q.initial !== true) return `openspec question initial was ${q.initial}, expected true (yes)`;
+          return q.message === OPENSPEC_MSG ? null : `openspec message was "${q.message}"`;
+        } }], { detectOpenspec: () => false, runInstall: spy.run });
+        checkQuestions('openspec approve', run, ['setup', 'scope', 'installOpenspec']);
+        check('openspec approve: npm install runs once', spy.calls === 1, `${spy.calls} calls`);
+        check('openspec approve: success reported', run.logs.split('\n').includes('OpenSpec CLI installed with ' + OPENSPEC_CMD + '.'), run.logs);
+        const qi = run.timeline.findIndex((e) => e.kind === 'question' && e.name === 'installOpenspec');
+        const li = run.timeline.findIndex((e) => e.kind === 'log' && e.text.startsWith('Installed '));
+        const ni = run.timeline.findIndex((e) => e.kind === 'log' && e.text === 'Next steps:');
+        check('openspec approve: question after the plugin install and before "Next steps"', li !== -1 && qi > li && qi < ni, `qi=${qi} li=${li} ni=${ni}`);
+        check('openspec approve: plugin installed, exit 0', pluginInstalled(sc) && run.result.exitCode === 0, run.errors);
+        checkNextStepsLast('openspec approve', run.logs);
+      }
+      {
+        // "[interaction] User declines the install": nothing installed, manual command printed, plugin stays.
+        const sc = sb.scenario('openspec-decline');
+        fs.mkdirSync(path.join(sc.cwd, '.claude'));
+        const spy = installSpy();
+        const run = await runInit(sb, sc, ['init'], [...flow, { name: 'installOpenspec', answer: false }], { detectOpenspec: () => false, runInstall: spy.run });
+        checkQuestions('openspec decline', run, ['setup', 'scope', 'installOpenspec']);
+        check('openspec decline: nothing installed', spy.calls === 0, `${spy.calls} calls`);
+        check('openspec decline: manual command printed', run.logs.split('\n').includes('  Install it with: ' + OPENSPEC_CMD), run.logs);
+        check('openspec decline: plugin stays, exit 0', pluginInstalled(sc) && run.result.exitCode === 0, run.errors);
+        checkNextStepsLast('openspec decline', run.logs);
+      }
+      {
+        // "[interaction] Install fails": error and manual command printed, init continues and exits 0.
+        const sc = sb.scenario('openspec-fails');
+        fs.mkdirSync(path.join(sc.cwd, '.claude'));
+        const spy = installSpy();
+        const run = await runInit(sb, sc, ['init'], [...flow, { name: 'installOpenspec', answer: true }], {
+          detectOpenspec: () => false,
+          runInstall: () => { spy.run(); throw new Error('npm install exited with status 243'); },
+        });
+        checkQuestions('openspec install fails', run, ['setup', 'scope', 'installOpenspec']);
+        check('openspec install fails: error and manual command printed', run.logs.includes('Warning: installing the OpenSpec CLI failed: npm install exited with status 243')
+          && run.logs.split('\n').includes('  Install it with: ' + OPENSPEC_CMD), run.logs);
+        check('openspec install fails: plugin stays, exit 0', pluginInstalled(sc) && run.result.exitCode === 0, run.errors);
+        checkNextStepsLast('openspec install fails', run.logs);
+      }
+      {
+        // "Cancel at the OpenSpec question": nothing installed, the completed plugin install stays, exit 0.
+        const sc = sb.scenario('openspec-cancel');
+        fs.mkdirSync(path.join(sc.cwd, '.claude'));
+        const spy = installSpy();
+        const run = await runInit(sb, sc, ['init'], [...flow, 'cancel'], { detectOpenspec: () => false, runInstall: spy.run });
+        checkQuestions('openspec cancel', run, ['setup', 'scope', 'installOpenspec']);
+        check('openspec cancel: nothing installed', spy.calls === 0, `${spy.calls} calls`);
+        check('openspec cancel: no "Installation cancelled" line for the completed install', !run.logs.split('\n').includes(CANCEL_LINE), run.logs);
+        check('openspec cancel: plugin stays, exit 0', pluginInstalled(sc) && run.result.exitCode === 0, run.errors);
+        checkNextStepsLast('openspec cancel', run.logs);
+      }
+      {
+        // --default in a terminal asks nothing and only warns with the install command.
+        const sc = sb.scenario('openspec-default');
+        fs.mkdirSync(path.join(sc.cwd, '.claude'));
+        const spy = installSpy();
+        const run = await runInit(sb, sc, ['init', '--default'], [], { detectOpenspec: () => false, runInstall: spy.run });
+        checkQuestions('openspec --default in a terminal', run, []);
+        check('openspec --default: nothing installed', spy.calls === 0, `${spy.calls} calls`);
+        check('openspec --default: warning with the install command', run.logs.includes('Warning: the OpenSpec CLI (openspec) was not found on PATH. five-role-team commands need it.')
+          && run.logs.split('\n').includes('  Install it with: ' + OPENSPEC_CMD), run.logs);
+        check('openspec --default: exit 0', run.result.exitCode === 0, run.errors);
+        checkNextStepsLast('openspec --default', run.logs);
+      }
+      {
+        // --link in a terminal asks only scope and harness, so the CLI check warns and never asks.
+        const sc = sb.scenario('openspec-link');
+        const spy = installSpy();
+        const run = await runInit(sb, sc, ['init', '--link'], [
+          { name: 'scope', answer: 'global' },
+          { name: 'harness', answer: 'claude-code' },
+        ], { detectOpenspec: () => false, runInstall: spy.run });
+        checkQuestions('openspec --link in a terminal', run, ['scope', 'harness']);
+        check('openspec --link: nothing installed, warning printed', spy.calls === 0 && run.logs.split('\n').includes('  Install it with: ' + OPENSPEC_CMD), run.logs);
+        checkNextStepsLast('openspec --link', run.logs);
+      }
     }
 
     // ---- Symlink install for development: --link asks only scope and harness ----
