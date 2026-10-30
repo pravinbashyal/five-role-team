@@ -8,7 +8,7 @@
 
 ## 2. Documentation
 
-- [ ] 2.1 Update `README.md`: Requirements lists the OpenSpec CLI explicitly with a link to https://openspec.dev; Install gains an `openspec init` step for the project; "The two questions" section describes the conditional OpenSpec question and `--install-openspec`; the `--help` flag list matches. Verify with `node test/verify-readme-commands.js` and by reading the section against the shipped behavior.
+- [x] 2.1 Update `README.md`: Requirements lists the OpenSpec CLI explicitly with a link to https://openspec.dev; Install gains an `openspec init` step for the project; "The two questions" section describes the conditional OpenSpec question and `--install-openspec`; the `--help` flag list matches. Verify with `node test/verify-readme-commands.js` and by reading the section against the shipped behavior.
 
 ## 3. Whole-change verification
 

@@ -24,6 +24,7 @@ Before any of that, plan time has its own order: a `designer` role (Opus, read-o
 ## Requirements
 
 - A project using [OpenSpec](https://github.com/Fission-AI/OpenSpec) (`tasks.md`, `proposal.md`, `design.md`, `specs/*/spec.md`) — this isn't a general-purpose task runner.
+- The [OpenSpec CLI](https://openspec.dev) (`openspec` on your `PATH`). Every agent, command and skill calls it. `init` checks for it and can install it; see [The setup questions](#the-setup-questions).
 - The `openspec-apply-change` skill (or equivalent) for the actual OpenSpec CLI plumbing.
 - Node.js 14 or newer, for the `five-role-team` command.
 
@@ -42,9 +43,17 @@ cd your-project
 five-role-team init
 ```
 
+Then, in a project that does not use OpenSpec yet, run `openspec init` once from the project root:
+
+```bash
+openspec init
+```
+
+If `openspec` is not found, install it as described in [The setup questions](#the-setup-questions) and start a new shell so `PATH` is refreshed.
+
 Then point a project's own `CLAUDE.md` at **`/five-role-team:apply`**, not just at the skill by name — see "Getting this skill to actually load" in `SKILL.md`. A CLAUDE.md pointer to the skill alone is unreliable: skills only take effect when invoked, and a plain `/opsx:apply` loads its own instructions directly without first triggering this one. The `/five-role-team:apply` command is the deterministic fix.
 
-### The two questions
+### The setup questions
 
 On a terminal, `five-role-team init` first prints the default setup: the detected harness, then each agent with its default model. Then it asks:
 
@@ -60,6 +69,25 @@ The paths in the question are the real paths for the harness in use.
 The harness is detected from the current directory: pi when `./.pi` exists and `./.claude` does not, otherwise Claude Code. `--harness` overrides it.
 
 If five-role-team is already installed at the chosen path, `init` asks `Overwrite existing installation at <path>?` with No as the default. Choosing No, or pressing Ctrl-C or Esc at any question, prints "Installation cancelled. Nothing was changed." and changes nothing.
+
+#### A third, conditional question: the OpenSpec CLI
+
+This question is asked after the plugin is installed, and only when the `openspec` command is missing. `init` checks by running `openspec --version`. When the CLI is present, nothing is asked or printed.
+
+On a terminal in the interactive flow (no `--default`, no `--link`), a missing CLI gets this question, with Yes as the default:
+
+> OpenSpec CLI not found. Install it now with `npm install -g @fission-ai/openspec`?
+
+- **Yes** runs that npm command and reports the result. If npm fails, its error and the manual command are printed.
+- **No**, Ctrl-C or Esc installs nothing and prints the command to run later.
+
+None of these answers undoes the plugin install, and `init` still exits 0.
+
+Without a terminal, or with `--default` or `--link`, `init` never asks and never installs the CLI. It prints a warning that includes the install command.
+
+`--install-openspec` installs the CLI without a question when it is missing, in any mode, including `--default` and runs without a terminal. When the CLI is already present, it does nothing. Use it in scripts that need the CLI.
+
+A newly installed `openspec` may not be on `PATH` until you start a new shell.
 
 ### Without a terminal, or with `--default`
 
@@ -92,6 +120,7 @@ If required flags are missing, `init` exits 1 and writes nothing. The hint sugge
 | `--agent-models <map>` | Comma-separated `agent=model` pairs, e.g. `"worker=sonnet,reviewer=opus"`. Skips the model questions. Short names are `opus`, `sonnet` and `haiku`; a name containing `/` is used as-is. |
 | `--force` | Overwrite an existing installation without asking. Needed in scripts, because a run without a terminal cannot confirm. |
 | `--verbose` | Print one "Copying ..." line per directory. Without it, the install is quiet. |
+| `--install-openspec` | Install the OpenSpec CLI (`npm install -g @fission-ai/openspec`) without asking when it is missing, in any mode. Does nothing when it is present. Without it, `init` asks on a terminal and only warns otherwise. |
 | `--help`, `-h` | Show usage. |
 | `--version`, `-v` | Print the installed version and exit. Installs nothing. |
 
