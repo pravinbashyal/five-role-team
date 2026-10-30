@@ -17,6 +17,14 @@
 //   - "Init in a project"
 //   - "Init with global flag"
 //   - D2 harness detection: pi when ./.pi exists and ./.claude does not (plus --agents override)
+//   - OpenSpec CLI check (init-openspec-check task 1.2): --default warns without installing,
+//     --default --install-openspec installs (and a failed install still exits 0), a present CLI
+//     is a no-op, and a no-terminal run without the flag asks nothing
+//
+// Most runs are child processes of install.js (stdin empty, so not a TTY). The OpenSpec checks
+// give each child a PATH that holds only stub `openspec` and `npm` binaries, so no real npm runs
+// and a real openspec on this machine cannot change the result. One scenario calls main()
+// in-process without the isTTY override (stdin of the test runner decides; npm test uses </dev/null).
 //
 // Exit 0 only when every check passes.
 const fs = require('fs');
@@ -25,6 +33,7 @@ const { createSandbox } = require(path.join(__dirname, 'verify-sandbox.js'));
 
 const REPO = path.join(__dirname, '..');
 const INSTALL = path.join(REPO, 'install.js');
+const installer = require(INSTALL);
 const ALL_AGENTS = ['architect', 'designer', 'intern', 'reviewer', 'supervisor', 'worker'];
 
 // Model aliases as documented in install.js --help (MODEL SHORT NAMES).
@@ -74,6 +83,30 @@ function lstatOrNull(p) {
     return null;
   }
 }
+
+// Scenario-local bin directory used as the child's whole PATH. `npm` is always a stub that
+// appends its argv to npmLog and exits with npmExit; `openspec` is a stub that exits 0 only
+// when `openspec: true`, so "missing" means the command is not on PATH at all.
+function stubBin(sc, { openspec = false, npmExit = 0 } = {}) {
+  const dir = path.join(path.dirname(sc.home), 'bin');
+  fs.mkdirSync(dir, { recursive: true });
+  const npmLog = path.join(dir, 'npm-calls.log');
+  const stub = (name, body) => {
+    const file = path.join(dir, name);
+    fs.writeFileSync(file, `#!/bin/sh\n${body}\n`);
+    fs.chmodSync(file, 0o755);
+  };
+  if (openspec) stub('openspec', 'exit 0');
+  stub('npm', `echo "$@" >> "${npmLog}"\nexit ${npmExit}`);
+  return { env: { PATH: dir }, npmLog };
+}
+
+// The npm argv lines the stub recorded ('' when npm was never run).
+function npmCalls(npmLog) {
+  return fs.existsSync(npmLog) ? fs.readFileSync(npmLog, 'utf8').trim() : '';
+}
+
+const OPENSPEC_CMD = 'npm install -g @fission-ai/openspec';
 
 function listAgents(primary) {
   const dir = path.join(primary, 'agents');
@@ -142,7 +175,7 @@ function runInstall(sb, sc, argv) {
   return { r, ok };
 }
 
-function main() {
+async function main() {
   const sb = createSandbox();
   try {
     // ---- [interaction] Default flag without a terminal (claude-code, local) ----
@@ -313,6 +346,104 @@ function main() {
       });
       check('init with global flag: nothing written in the project cwd', snapshot(sc.cwd) === '', snapshot(sc.cwd));
     }
+
+    // ---- OpenSpec CLI check (init-openspec-check task 1.2) ----
+    // A `--default` run with the CLI missing warns with the install command and never installs.
+    {
+      const sc = sb.scenario('openspec-default-missing');
+      fs.mkdirSync(path.join(sc.cwd, '.claude'));
+      const stub = stubBin(sc);
+      const r = sb.run([INSTALL, 'init', '--default'], { home: sc.home, cwd: sc.cwd, env: stub.env });
+      check('openspec --default missing: exit 0 with success', r.status === 0 && /^Installation successful/m.test(r.stdout),
+        `status ${r.status}: ${r.stderr.trim()}`);
+      check('openspec --default missing: warns with the install command',
+        /OpenSpec CLI \(openspec\) was not found on PATH/.test(r.stdout) && r.stdout.includes('  Install it with: ' + OPENSPEC_CMD), r.stdout);
+      check('openspec --default missing: no question asked', !/Install it now/.test(r.stdout), r.stdout);
+      check('openspec --default missing: npm never run', npmCalls(stub.npmLog) === '', npmCalls(stub.npmLog));
+      check('openspec --default missing: plugin stays installed',
+        lstatOrNull(path.join(sc.cwd, '.claude', 'skills', 'five-role-team')) !== null);
+    }
+    // `--default --install-openspec` installs the missing CLI with npm, without a question.
+    {
+      const sc = sb.scenario('openspec-default-flag');
+      fs.mkdirSync(path.join(sc.cwd, '.claude'));
+      const stub = stubBin(sc);
+      const r = sb.run([INSTALL, 'init', '--default', '--install-openspec'], { home: sc.home, cwd: sc.cwd, env: stub.env });
+      check('openspec --default --install-openspec: exit 0 with success', r.status === 0 && /^Installation successful/m.test(r.stdout),
+        `status ${r.status}: ${r.stderr.trim()}`);
+      check('openspec --default --install-openspec: npm install -g @fission-ai/openspec runs once',
+        npmCalls(stub.npmLog) === 'install -g @fission-ai/openspec', npmCalls(stub.npmLog));
+      check('openspec --default --install-openspec: success reported, no question',
+        r.stdout.includes('OpenSpec CLI installed with ' + OPENSPEC_CMD + '.') && !/Install it now/.test(r.stdout), r.stdout);
+      check('openspec --default --install-openspec: plugin installed',
+        lstatOrNull(path.join(sc.cwd, '.claude', 'skills', 'five-role-team')) !== null);
+    }
+    // A failed npm install prints the error and the manual command, and the install still exits 0.
+    {
+      const sc = sb.scenario('openspec-default-flag-fails');
+      fs.mkdirSync(path.join(sc.cwd, '.claude'));
+      const stub = stubBin(sc, { npmExit: 3 });
+      const r = sb.run([INSTALL, 'init', '--default', '--install-openspec'], { home: sc.home, cwd: sc.cwd, env: stub.env });
+      check('openspec flag install fails: exit 0 and plugin installed',
+        r.status === 0 && /^Installation successful/m.test(r.stdout) &&
+        lstatOrNull(path.join(sc.cwd, '.claude', 'skills', 'five-role-team')) !== null, `status ${r.status}`);
+      check('openspec flag install fails: error and manual command printed',
+        r.stdout.includes('Warning: installing the OpenSpec CLI failed: npm install exited with status 3') &&
+        r.stdout.includes('  Install it with: ' + OPENSPEC_CMD), r.stdout);
+    }
+    // A present CLI is a no-op: no npm call and nothing about OpenSpec in the output.
+    {
+      const sc = sb.scenario('openspec-default-flag-present');
+      fs.mkdirSync(path.join(sc.cwd, '.claude'));
+      const stub = stubBin(sc, { openspec: true });
+      const r = sb.run([INSTALL, 'init', '--default', '--install-openspec'], { home: sc.home, cwd: sc.cwd, env: stub.env });
+      check('openspec flag with CLI present: exit 0 with success', r.status === 0 && /^Installation successful/m.test(r.stdout),
+        `status ${r.status}: ${r.stderr.trim()}`);
+      check('openspec flag with CLI present: no install attempted', npmCalls(stub.npmLog) === '', npmCalls(stub.npmLog));
+      check('openspec flag with CLI present: nothing about OpenSpec printed',
+        !/OpenSpec CLI|@fission-ai\/openspec/.test(r.stdout), r.stdout);
+    }
+    // No terminal and no flag: the custom (non-default) init never asks and never installs.
+    {
+      const sc = sb.scenario('openspec-no-tty');
+      const stub = stubBin(sc);
+      const r = sb.run([INSTALL, 'init', '--harness', 'claude-code', '--agents', 'worker',
+        '--agent-models', 'worker=sonnet'], { home: sc.home, cwd: sc.cwd, env: stub.env });
+      check('openspec no terminal: exit 0 with success and no prompt', r.status === 0 && /^Installation successful/m.test(r.stdout),
+        `status ${r.status}: ${r.stderr.trim()}`);
+      check('openspec no terminal: warns with the install command, no question',
+        /was not found on PATH/.test(r.stdout) && r.stdout.includes(OPENSPEC_CMD) && !/Install it now/.test(r.stdout), r.stdout);
+      check('openspec no terminal: npm never run', npmCalls(stub.npmLog) === '', npmCalls(stub.npmLog));
+    }
+    // In-process main() with no isTTY override: the real stdin decides the terminal signal.
+    // Missing CLI, no flag, injected detection and install so nothing real runs; any question
+    // through promptsImpl is recorded, and the run must ask none and install nothing.
+    {
+      const sc = sb.scenario('openspec-main-no-tty');
+      sb.enter(sc);
+      const logs = [];
+      const errors = [];
+      const installCalls = [];
+      const questions = [];
+      const result = await installer.main(
+        ['init', '--harness', 'claude-code', '--agents', 'worker', '--agent-models', 'worker=sonnet'],
+        {
+          log: (l) => logs.push(String(l)),
+          error: (l) => errors.push(String(l)),
+          detectOpenspec: () => false,
+          runInstall: () => { installCalls.push('npm'); },
+          promptsImpl: async (q) => { questions.push(q && q.message); return {}; },
+        });
+      const text = logs.join('\n');
+      check('openspec main() no terminal: exit 0', result.exitCode === 0, `exit ${result.exitCode}: ${errors.join(' | ')}`);
+      check('openspec main() no terminal: no OpenSpec question asked',
+        questions.every((m) => !/OpenSpec CLI not found/.test(m || '')), JSON.stringify(questions));
+      check('openspec main() no terminal: nothing installed', installCalls.length === 0, `${installCalls.length} calls`);
+      check('openspec main() no terminal: warning with the install command printed',
+        /OpenSpec CLI \(openspec\) was not found on PATH/.test(text) && text.includes(OPENSPEC_CMD), text);
+      check('openspec main() no terminal: plugin installed',
+        lstatOrNull(path.join(sc.cwd, '.claude', 'skills', 'five-role-team')) !== null);
+    }
   } finally {
     sb.cleanup();
   }
@@ -322,4 +453,7 @@ function main() {
   process.exitCode = failed === 0 ? 0 : 1;
 }
 
-main();
+main().catch((err) => {
+  console.error('Error:', err && err.stack ? err.stack : err);
+  process.exitCode = 1;
+});

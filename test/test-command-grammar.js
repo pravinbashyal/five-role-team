@@ -10,6 +10,7 @@
 //   - "[interaction] Help text uses the command name"
 //   - "[interaction] Unknown argument hint"
 //   - parseArgs accepts --default and --verbose
+//   - parseArgs accepts --install-openspec on init (and ignores it on uninstall), and --help lists it
 //
 // Exit 0 only when every check passes.
 const path = require('path');
@@ -115,6 +116,33 @@ async function main_() {
     check('parseArgs: uninstall still parses', u.errors.length === 0 && u.uninstall === true, JSON.stringify(u.errors));
     const bare = parseArgs(['--global']);
     check('parseArgs: no subcommand sets neither init nor uninstall', !bare.init && !bare.uninstall);
+  }
+
+  // ---- --install-openspec (init-openspec-check task 1.2) ----
+  {
+    const p = parseArgs(['init', '--install-openspec']);
+    check('parseArgs: init --install-openspec parses without errors and sets installOpenspec',
+      p.errors.length === 0 && p.init === true && p.installOpenspec === true, JSON.stringify(p.errors));
+    const combined = parseArgs(['init', '--default', '--install-openspec', '--verbose']);
+    check('parseArgs: --install-openspec combines with --default',
+      combined.errors.length === 0 && combined.installOpenspec === true && combined.defaultSetup === true, JSON.stringify(combined.errors));
+    const plain = parseArgs(['init', '--default']);
+    check('parseArgs: installOpenspec is false without the flag', plain.installOpenspec === false);
+    const un = parseArgs(['uninstall', '--local', '--harness', 'pi', '--install-openspec']);
+    check('parseArgs: uninstall accepts --install-openspec with no error (no effect, like other init options)',
+      un.errors.length === 0 && un.uninstall === true, JSON.stringify(un.errors));
+  }
+  {
+    const lines = [];
+    showUsage((l) => lines.push(l));
+    const text = lines.join('\n');
+    check('showUsage: lists --install-openspec with the npm command',
+      /--install-openspec/.test(text) && /npm install -g @fission-ai\/openspec/.test(text));
+  }
+  {
+    const { result, out, err } = await run(['--help']);
+    check('--help (main): lists --install-openspec, exit 0',
+      result.exitCode === 0 && /--install-openspec/.test(out) && err === '', `${result.exitCode} ${err}`);
   }
 
   // ---- --version / -v (task 7.1) ----

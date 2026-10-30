@@ -24,6 +24,8 @@ const prompts = require('prompts');
  * - --force: Force overwrite without confirmation
  * - --default: Install the default setup with no setup questions (parsed here; behaviour in task 2.1)
  * - --verbose: Print one "Copying ..." line per directory while installing (task 4.1)
+ * - --install-openspec: Install the OpenSpec CLI when it is missing, without asking, in any mode
+ *   (init-openspec-check task 1.2). Does nothing when the CLI is present.
  * - --version, -v: Print the version from package.json and exit 0 (task 7.1). Takes precedence
  *   over every other argument; nothing is installed and no TTY is needed.
  * - init: Subcommand (must be the first argument) that installs. Scope defaults to local.
@@ -43,6 +45,7 @@ const prompts = require('prompts');
  *   - force: boolean
  *   - defaultSetup: boolean
  *   - verbose: boolean
+ *   - installOpenspec: boolean (--install-openspec)
  *   - uninstall: boolean
  *   - init: boolean
  *   - version: boolean (--version or -v)
@@ -68,6 +71,7 @@ function parseArgs(argv) {
     force: false,
     defaultSetup: false,
     verbose: false,
+    installOpenspec: false,
     uninstall: false,
     init: false,
     version: false,
@@ -113,6 +117,10 @@ function parseArgs(argv) {
       parsed.defaultSetup = true;
     } else if (arg === '--verbose') {
       parsed.verbose = true;
+    } else if (arg === '--install-openspec') {
+      // Install the OpenSpec CLI when it is missing, without a question (task 1.2). Accepted for
+      // uninstall too, with no effect, like the other init options (see the uninstall help).
+      parsed.installOpenspec = true;
     } else if (arg === '--help' || arg === '-h') {
       // Handled before parsing (see the early --help check); accepted here so it
       // is not reported as an unknown flag.
@@ -442,6 +450,9 @@ OPTIONS:
   OTHER OPTIONS:
   --force                 Skip overwrite confirmation for existing installations
   --verbose               Print one "Copying ..." line per directory while installing
+  --install-openspec      Install the OpenSpec CLI (npm install -g @fission-ai/openspec) without asking
+                          when it is missing, in any mode. Does nothing when it is already present.
+                          Without it, init asks on a terminal and only warns otherwise.
 
   UNINSTALL (subcommand, must be the first argument):
   uninstall               Remove the installed plugin for the given scope and harness.
@@ -449,7 +460,7 @@ OPTIONS:
                           A --link install only loses its symlink; the source is never touched.
                           Exits 1 with "Nothing to uninstall" when nothing is installed.
                           Uses --global|--local and --harness. Other recognised options
-                          (--link, --force, --default, --verbose, --agents, --agent-models) are
+                          (--link, --force, --default, --verbose, --install-openspec, --agents, --agent-models) are
                           accepted but have no effect. Unknown flags or arguments are an error (exit 1).
 
   INTERACTIVE MODE (init on a terminal, without --default):
