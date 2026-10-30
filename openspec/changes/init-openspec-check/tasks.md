@@ -12,4 +12,4 @@
 
 ## 3. Whole-change verification
 
-- [ ] 3.1 Run `npm test` and `openspec validate init-openspec-check --strict`; manually run `five-role-team init` in a temp directory with `openspec` hidden from `PATH` and confirm the question, the decline path, and that "Next steps" is last. Verify all pass and the plugin files are present after declining.
+- [x] 3.1 Run `npm test` and `openspec validate init-openspec-check --strict`; manually run `five-role-team init` in a temp directory with `openspec` hidden from `PATH` and confirm the question, the decline path, and that "Next steps" is last. Verify all pass and the plugin files are present after declining.
