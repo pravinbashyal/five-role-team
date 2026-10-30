@@ -13,7 +13,7 @@ Before any of that, plan time has its own order: a `designer` role (Opus, read-o
 - `agents/worker.md` (Haiku) — implements exactly one task at a time, never marks its own work done
 - `agents/reviewer.md` — audits a worker's diff with fresh context, never implements
 - `agents/supervisor.md` — audits a completed multi-task section's composition, and (once per change, only when the change's specs carry `[interaction]`-tagged scenarios) gates the change's implementation against them; never implements
-- `agents/intern.md` — helper dispatched by `worker` for in-task chores (file lookups, boilerplate edits, mechanical cleanups), which delegates small code-writing chores to a local `qwen2.5-coder:7b`; makes no design or review decisions
+- `agents/intern.md` — helper dispatched by `worker` for in-task chores (file lookups, boilerplate edits, mechanical cleanups); makes no design or review decisions
 - `pi/agents/worker.md` — the pi-only `worker` (pi tool names, plus `subagent` with `allowedAgents: intern` so pi enforces that the worker spawns only `intern`); same instructions as `agents/worker.md`. Pi users who maintain their own `~/.pi/agent/agents/worker.md` get this shipped worker after re-running `five-role-team init` for pi
 - `SKILL.md` (this plugin's root skill, `five-role-team`) — the orchestrator's dispatch-loop protocol; overrides step 6 of the `openspec-apply-change` skill's default "implement inline" behavior
 - `commands/explore.md` (`/five-role-team:explore [topic]`) — judges interaction-relevance and, when it applies, dispatches `designer` (Opus) before dispatching `architect` (Opus) for exploration/planning, instead of running explore mode inline in the main session's model

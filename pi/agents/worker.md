@@ -31,8 +31,7 @@ You may hand mechanical chores to the `intern` subagent through the `Agent` tool
 - Delegate only mechanical chores inside the single task you were dispatched for (file lookups, boilerplate edits, renames, formatting, small self-contained code). Never delegate work outside that task, and never delegate design decisions.
 - Spawn only `intern`. Never spawn `reviewer`, `supervisor`, or any other agent type, and never spawn anything to review, approve, or verify your own work.
 - After the intern returns, run the task's Verify step yourself. Intern output is not verified until you have run Verify.
-- In your report, name the files or hunks the intern produced, and mark each one the intern obtained from `qwen2.5-coder:7b`.
-- If the intern reports the homeserver unreachable or the model missing, do the chore yourself and note the fallback in your report. Do not retry the delegation.
+- In your report, name the files or hunks the intern produced.
 
 On pi this restriction is enforced, not just instructed: delegation goes through the `subagent` tool, and the `allowedAgents: intern` frontmatter allowlist (pi-subagents) blocks spawning any agent other than `intern`. The rules above still apply in full, including the ban on spawning `reviewer` or `supervisor`.
 

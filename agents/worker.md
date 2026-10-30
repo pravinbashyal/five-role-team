@@ -30,8 +30,7 @@ You may hand mechanical chores to the `intern` subagent through the `Agent` tool
 - Delegate only mechanical chores inside the single task you were dispatched for (file lookups, boilerplate edits, renames, formatting, small self-contained code). Never delegate work outside that task, and never delegate design decisions.
 - Spawn only `intern`. Never spawn `reviewer`, `supervisor`, or any other agent type, and never spawn anything to review, approve, or verify your own work.
 - After the intern returns, run the task's Verify step yourself. Intern output is not verified until you have run Verify.
-- In your report, name the files or hunks the intern produced, and mark each one the intern obtained from `qwen2.5-coder:7b`.
-- If the intern reports the homeserver unreachable or the model missing, do the chore yourself and note the fallback in your report. Do not retry the delegation.
+- In your report, name the files or hunks the intern produced.
 
 On Claude Code this restriction is instruction-only: the subagent definition cannot limit which agent types you spawn, so following these rules is your responsibility.
 
