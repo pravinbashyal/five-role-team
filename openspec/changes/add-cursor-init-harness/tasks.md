@@ -56,15 +56,19 @@
 
 ## 5. Release
 
-- [ ] 5.1 Ship a minor npm release for the cursor harness (design Migration Plan):
-  - Bump `package.json` `version` from `2.1.1` to the next minor (`2.2.0`).
-  - Confirm `npm test` and `npm pack --dry-run` still look right after the bump.
-  - Publish `@pravinbashyal/five-role-team@2.2.0` with `npm publish` (public access already in `publishConfig`).
-  - Verify `npx --yes @pravinbashyal/five-role-team@2.2.0 --version` (or `npm view … version`) reports `2.2.0`.
+- [x] 5.1 Ship a minor npm release for the cursor harness (design Migration Plan), with changelog and tag:
+  - Bump `package.json` (and `package-lock.json` root version) from `2.1.1` to `2.2.0`.
+  - Add a root `CHANGELOG.md` (Keep a Changelog style). Entry **[2.2.0]** documents the named `cursor` harness (paths, detection, agents dir, uninstall, next steps). Briefly backfill **[2.1.1]**, **[2.1.0]**, and **[2.0.0]** from existing `Release …` / `v2.0.0` history so the file is not a single-release stub.
+  - Confirm `npm test` and `npm pack --dry-run` still look right after the bump (include `CHANGELOG.md` in `package.json` `files` only if the project already ships docs that way — default: keep pack whitelist unchanged unless README is already listed).
+  - Publish is already done on the registry (`@pravinbashyal/five-role-team@2.2.0`); verify with `npm view @pravinbashyal/five-role-team version` → `2.2.0`. Re-publish only if the registry is missing that version.
+  - Create annotated git tag `v2.2.0` on the release commit (message like prior releases). Also add annotated tags `v2.1.1` and `v2.1.0` on the existing `Release 2.1.1` / `Release 2.1.0` commits if those tags are missing (do not move `v2.0.0`).
+  - Do not `git push` or `git push --tags` unless the Product Owner explicitly asks.
 
   Verify:
-  - `package.json` version is `2.2.0`
-  - published package is visible on the registry at that version
+  - `package.json` / lockfile version is `2.2.0`
+  - `CHANGELOG.md` exists with a `[2.2.0]` section covering the cursor harness
+  - `git tag -l 'v2.*'` includes `v2.2.0`, `v2.1.1`, `v2.1.0`, `v2.0.0`
+  - registry reports `2.2.0`
   - `openspec validate add-cursor-init-harness --strict` still passes
 
 ## Workflow follow-up
