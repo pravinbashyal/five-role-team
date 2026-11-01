@@ -83,6 +83,9 @@ async function main_() {
     check('--help: examples include init, init --default and uninstall',
       /five-role-team init\b/.test(out) && /five-role-team init --default/.test(out) && /five-role-team uninstall/.test(out));
     check('--help: no node install.js', !/node install\.js/.test(out));
+    check('[interaction] Help lists cursor: --help names cursor alongside pi and claude-code',
+      /'cursor'/.test(out) && /'pi'/.test(out) && /'claude-code'/.test(out) &&
+      /\.cursor\/skills/.test(out), out.slice(out.indexOf('HARNESS'), out.indexOf('HARNESS') + 400));
   }
   {
     const lines = [];
@@ -96,6 +99,8 @@ async function main_() {
     check('showUsage: every USAGE line starts with five-role-team',
       start >= 0 && end > start && block.length > 0 && block.every(l => /^  five-role-team /.test(l)),
       block.join(' | '));
+    check('[interaction] Help lists cursor: showUsage names cursor with skill paths',
+      /'cursor'/.test(text) && /~\/\.cursor\/skills/.test(text) && /\.\/\.cursor\/skills/.test(text));
   }
 
   // ---- [interaction] Unknown argument hint ----

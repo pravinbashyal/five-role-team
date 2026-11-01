@@ -234,6 +234,8 @@ function parseArgs(argv) {
  * - 'claude-code' with global scope → ~/.claude/skills/
  * - 'pi' with local scope → ./.pi/skills/
  * - 'claude-code' with local scope → ./.claude/skills/
+ * - 'cursor' with global scope → ~/.cursor/skills/
+ * - 'cursor' with local scope → ./.cursor/skills/
  * - custom path (contains '/' or ends with known dir name) → used as-is
  * 
  * For pi harness, also returns secondary symlink location
@@ -279,6 +281,14 @@ function resolveHarnessPath(harness, isGlobal) {
     } else {
       // Local claude-code: ./.claude/skills/
       basePath = path.join('.', '.claude', 'skills');
+    }
+  } else if (trimmedHarness === 'cursor') {
+    if (isGlobal) {
+      // Global cursor: ~/.cursor/skills/
+      basePath = path.join(os.homedir(), '.cursor', 'skills');
+    } else {
+      // Local cursor: ./.cursor/skills/
+      basePath = path.join('.', '.cursor', 'skills');
     }
   } else {
     // Unknown harness name - treat as potential custom path
@@ -346,15 +356,18 @@ function readDefaultModels(agentIds, sourceDir = __dirname) {
 
 /**
  * Harness used by the default setup when --harness is not given (design D2).
- * pi when `./.pi` exists and `./.claude` does not; otherwise claude-code.
+ * cursor when `./.cursor` exists and `./.claude` and `./.pi` do not; pi when
+ * `./.pi` exists and `./.claude` does not; otherwise claude-code.
  * Looks only at the current directory (or the given one), never at HOME.
  *
  * @param {string} [cwd] - Directory to inspect (default process.cwd())
- * @returns {'pi'|'claude-code'}
+ * @returns {'pi'|'claude-code'|'cursor'}
  */
 function detectDefaultHarness(cwd = process.cwd()) {
+  const hasCursor = fs.existsSync(path.join(cwd, '.cursor'));
   const hasPi = fs.existsSync(path.join(cwd, '.pi'));
   const hasClaude = fs.existsSync(path.join(cwd, '.claude'));
+  if (hasCursor && !hasClaude && !hasPi) return 'cursor';
   return hasPi && !hasClaude ? 'pi' : 'claude-code';
 }
 
@@ -424,12 +437,13 @@ OPTIONS:
 
   SCOPE (init asks on a terminal unless given; defaults to local without a terminal; uninstall requires one):
   --global                Install for all projects (~/.claude/skills/; pi also symlinks from ~/.pi/agent/skills/)
-  --local                 Install into this project (./.claude/skills/ or ./.pi/skills/)
+  --local                 Install into this project (./.claude/skills/, ./.pi/skills/, or ./.cursor/skills/)
 
   HARNESS (init asks on a terminal unless given or set by --default; uninstall requires it):
-  --harness <name|path>   Target harness: 'pi', 'claude-code', or custom path
+  --harness <name|path>   Target harness: 'pi', 'claude-code', 'cursor', or custom path
                           - pi: Installs to ~/.claude/skills/ with symlink from ~/.pi/agent/skills/
                           - claude-code: Installs to ~/.claude/skills/ (global) or ./.claude/skills/ (local)
+                          - cursor: Installs to ~/.cursor/skills/ (global) or ./.cursor/skills/ (local)
                           - custom: Uses provided path as installation directory
 
   SETUP:
@@ -1407,6 +1421,7 @@ module.exports = {
   resolveHarnessPath,
   readDefaultModels,
   detectDefaultHarness,
+  buildScopeQuestion,
   confirmOverwrite,
   promptScopeSelection,
   promptHarnessSelection,

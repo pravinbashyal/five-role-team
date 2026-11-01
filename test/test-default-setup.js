@@ -17,6 +17,8 @@
 //   - "Init in a project"
 //   - "Init with global flag"
 //   - D2 harness detection: pi when ./.pi exists and ./.claude does not (plus --agents override)
+//   - D2 cursor harness detection (add-cursor-init-harness task 1.1)
+//   - Default flag with explicit cursor harness
 //   - OpenSpec CLI check (init-openspec-check task 1.2): --default warns without installing,
 //     --default --install-openspec installs (and a failed install still exits 0), a present CLI
 //     is a no-op, and a no-terminal run without the flag asks nothing
@@ -34,6 +36,11 @@ const { createSandbox } = require(path.join(__dirname, 'verify-sandbox.js'));
 const REPO = path.join(__dirname, '..');
 const INSTALL = path.join(REPO, 'install.js');
 const installer = require(INSTALL);
+const {
+  detectDefaultHarness,
+  resolveHarnessPath,
+  buildScopeQuestion,
+} = installer;
 const ALL_AGENTS = ['architect', 'designer', 'intern', 'reviewer', 'supervisor', 'worker'];
 
 // Model aliases as documented in install.js --help (MODEL SHORT NAMES).
@@ -178,6 +185,96 @@ function runInstall(sb, sc, argv) {
 async function main() {
   const sb = createSandbox();
   try {
+    // ---- In-process: resolveHarnessPath and detectDefaultHarness (task 1.1) ----
+    {
+      const local = resolveHarnessPath('cursor', false);
+      check('resolveHarnessPath cursor local: primary under ./.cursor/skills',
+        local.primary === path.join('.', '.cursor', 'skills', 'five-role-team'), local.primary);
+      check('resolveHarnessPath cursor local: no secondary', local.secondary === null);
+      check('resolveHarnessPath cursor local: not ./cursor/five-role-team',
+        local.primary !== path.join('.', 'cursor', 'five-role-team'), local.primary);
+      const sc = sb.scenario('resolve-cursor-global');
+      sb.enter(sc);
+      const global = resolveHarnessPath('cursor', true);
+      check('resolveHarnessPath cursor global: primary under HOME/.cursor/skills',
+        global.primary === path.join(sc.home, '.cursor', 'skills', 'five-role-team'), global.primary);
+      sb.activate();
+    }
+    {
+      const sc = sb.scenario('detect-cursor-only');
+      fs.mkdirSync(path.join(sc.cwd, '.cursor'));
+      check('detectDefaultHarness: cursor-only tree', detectDefaultHarness(sc.cwd) === 'cursor');
+    }
+    {
+      const sc = sb.scenario('detect-mixed-cursor-claude');
+      fs.mkdirSync(path.join(sc.cwd, '.cursor'));
+      fs.mkdirSync(path.join(sc.cwd, '.claude'));
+      check('detectDefaultHarness: .cursor + .claude -> claude-code',
+        detectDefaultHarness(sc.cwd) === 'claude-code');
+    }
+    {
+      const sc = sb.scenario('detect-cursor-pi');
+      fs.mkdirSync(path.join(sc.cwd, '.cursor'));
+      fs.mkdirSync(path.join(sc.cwd, '.pi'));
+      check('detectDefaultHarness: .cursor + .pi without .claude -> pi',
+        detectDefaultHarness(sc.cwd) === 'pi');
+    }
+    {
+      const sc = sb.scenario('detect-pi-only');
+      fs.mkdirSync(path.join(sc.cwd, '.pi'));
+      check('detectDefaultHarness: .pi only -> pi', detectDefaultHarness(sc.cwd) === 'pi');
+    }
+    {
+      const sc = sb.scenario('detect-no-markers');
+      check('detectDefaultHarness: no markers -> claude-code', detectDefaultHarness(sc.cwd) === 'claude-code');
+    }
+    {
+      const sc = sb.scenario('build-scope-cursor');
+      sb.enter(sc);
+      fs.mkdirSync(path.join(sc.cwd, '.cursor'));
+      const q = buildScopeQuestion('cursor');
+      const localTitle = q.choices[0].title;
+      const globalTitle = q.choices[1].title;
+      const expectLocal = path.join(sc.cwd, '.cursor', 'skills', 'five-role-team');
+      check('buildScopeQuestion cursor: local choice names project path',
+        localTitle.includes(expectLocal), localTitle);
+      check('buildScopeQuestion cursor: global choice names ~/.cursor/skills path',
+        globalTitle.includes('~/.cursor/skills/five-role-team'), globalTitle);
+      sb.activate();
+    }
+
+    // ---- Default flag with explicit cursor harness ----
+    {
+      const sc = sb.scenario('default-explicit-cursor');
+      fs.mkdirSync(path.join(sc.cwd, '.claude'));
+      const { r, ok } = runInstall(sb, sc, ['init', '--default', '--harness', 'cursor']);
+      check('default flag with explicit cursor harness: exit 0 with success', ok, `status ${r.status}`);
+      const cursorPrimary = path.join(sc.cwd, '.cursor', 'skills', 'five-role-team');
+      check('default flag with explicit cursor harness: installed under ./.cursor/skills',
+        lstatOrNull(cursorPrimary) !== null);
+      check('default flag with explicit cursor harness: no ./cursor/five-role-team stray path',
+        lstatOrNull(path.join(sc.cwd, 'cursor', 'five-role-team')) === null);
+      check('default flag with explicit cursor harness: no claude-code install written',
+        lstatOrNull(path.join(sc.cwd, '.claude', 'skills', 'five-role-team')) === null);
+      checkInstalled('default flag with explicit cursor harness', cursorPrimary,
+        { agents: ALL_AGENTS, harness: 'cursor', models: expectedModels(ALL_AGENTS) });
+    }
+
+    // ---- Cursor-only tree detects cursor (init --default) ----
+    {
+      const sc = sb.scenario('default-cursor-detect');
+      fs.mkdirSync(path.join(sc.cwd, '.cursor'));
+      const { r, ok } = runInstall(sb, sc, ['init', '--default']);
+      check('default with ./.cursor only: exit 0 with success', ok, `status ${r.status}`);
+      const primary = path.join(sc.cwd, '.cursor', 'skills', 'five-role-team');
+      check('default with ./.cursor only: installed under ./.cursor/skills/five-role-team',
+        lstatOrNull(primary) !== null);
+      check('default with ./.cursor only: no ./cursor/five-role-team',
+        lstatOrNull(path.join(sc.cwd, 'cursor', 'five-role-team')) === null);
+      checkInstalled('default with ./.cursor only', primary,
+        { agents: ALL_AGENTS, harness: 'cursor', models: expectedModels(ALL_AGENTS) });
+    }
+
     // ---- [interaction] Default flag without a terminal (claude-code, local) ----
     {
       const sc = sb.scenario('default-claude');
