@@ -11,6 +11,10 @@
 //
 // Scenarios covered (names as in specs/cli/installation and specs/cli/npm-distribution):
 //   - "[interaction] Default summary and first question", "[interaction] Default summary shows detected pi harness"
+//   - "[interaction] Default summary shows detected Cursor harness"
+//   - "[interaction] Scope paths for Cursor", "[interaction] Custom harness select lists cursor"
+//   - "[interaction] Detected Cursor harness is preselected", "[interaction] Next steps after a Cursor install"
+//   - "Cursor install does not warn about a Claude marketplace copy"
 //   - "[interaction] Choosing Default asks only scope"
 //   - "[interaction] Flags given in a terminal skip their questions"
 //   - "[interaction] Scope choices name real paths", "[interaction] Choosing all projects installs globally"
@@ -42,6 +46,13 @@ const ALIASES = {
 };
 const CANCEL_LINE = 'Installation cancelled. Nothing was changed.';
 const SETUP_TITLES = ['Default (recommended)', 'Custom'];
+const HARNESS_TITLES = ['pi', 'claude-code', 'cursor', 'Custom path'];
+const SHADOW_MARKETPLACE = JSON.stringify({
+  version: 2,
+  plugins: {
+    'five-role-team@five-role-team': [{ scope: 'user', installPath: '/nowhere', version: '1.1.0' }],
+  },
+}, null, 2);
 
 let passed = 0;
 let failed = 0;
@@ -98,6 +109,19 @@ function listAgents(primary) {
 
 function readConfig(primary) {
   return JSON.parse(fs.readFileSync(path.join(primary, '.agent-config.json'), 'utf8'));
+}
+
+function writeMarketplaceFile(home, content) {
+  const dir = path.join(home, '.claude', 'plugins');
+  fs.mkdirSync(dir, { recursive: true });
+  fs.writeFileSync(path.join(dir, 'installed_plugins.json'), content);
+}
+
+function nextStepsBlock(logs) {
+  const lines = logs.split('\n');
+  const at = lines.indexOf('Next steps:');
+  if (at < 0) return null;
+  return lines.slice(at + 1).filter((l) => l.startsWith('  '));
 }
 
 // Scripted prompts. `steps` are answered in order. A step is { name, answer, check? } where
@@ -256,6 +280,20 @@ async function main_() {
       check('pi summary: includes intern with its default model',
         beforeFirst.split('\n').includes(`    intern: ${expectedDefaultModel('intern')}`), beforeFirst);
     }
+    {
+      // "[interaction] Default summary shows detected Cursor harness": ./.cursor only.
+      const sc = sb.scenario('summary-cursor');
+      fs.mkdirSync(path.join(sc.cwd, '.cursor'));
+      const run = await runInit(sb, sc, ['init'], [
+        { name: 'setup', answer: 'default' },
+        { name: 'scope', answer: 'local' },
+      ]);
+      checkQuestions('cursor summary', run, ['setup', 'scope']);
+      const firstQuestion = run.timeline.findIndex((e) => e.kind === 'question');
+      const beforeFirst = run.timeline.slice(0, firstQuestion).map((e) => e.text).join('\n');
+      check('cursor summary: names harness cursor (detected)',
+        /Harness: cursor \(detected from this directory\)/.test(beforeFirst), beforeFirst);
+    }
 
     // ---- Scope question for every interactive init ----
     {
@@ -281,6 +319,26 @@ async function main_() {
         lstatOrNull(path.join(sc.cwd, '.claude', 'skills', 'five-role-team')) !== null && run.result.exitCode === 0);
       check('Choosing Default asks only scope: no harness, agent or model question',
         !run.names.some((n) => ['harness', 'agents', 'keepDefaults', 'model'].includes(n)));
+    }
+    {
+      // "[interaction] Scope paths for Cursor"
+      const sc = sb.scenario('scope-labels-cursor');
+      fs.mkdirSync(path.join(sc.cwd, '.cursor'));
+      const run = await runInit(sb, sc, ['init'], [
+        { name: 'setup', answer: 'default' },
+        { name: 'scope', answer: 'local', check: (q) => {
+          const localLabel = `This project (${realCwdOf(sc)}/.cursor/skills/five-role-team)`;
+          const globalLabel = 'All projects for this user (~/.cursor/skills/five-role-team)';
+          if (JSON.stringify(q.titles) !== JSON.stringify([localLabel, globalLabel])) {
+            return `scope labels were ${q.titles.join(' | ')}`;
+          }
+          if (q.initial !== 0) return `scope initial was ${q.initial}, expected 0 ("This project" preselected)`;
+          return null;
+        } },
+      ]);
+      checkQuestions('scope labels (Cursor)', run, ['setup', 'scope']);
+      check('scope paths for Cursor: installed under ./.cursor/skills',
+        lstatOrNull(path.join(sc.cwd, '.cursor', 'skills', 'five-role-team')) !== null && run.result.exitCode === 0);
     }
     {
       // "[interaction] Choosing all projects installs globally"
@@ -344,7 +402,7 @@ async function main_() {
         { name: 'setup', answer: 'custom' },
         { name: 'scope', answer: 'local' },
         { name: 'harness', answer: 'claude-code', check: (q) => {
-          if (JSON.stringify(q.titles) !== JSON.stringify(['pi', 'claude-code', 'Custom path'])) return `harness choices were ${q.titles.join(' | ')}`;
+          if (JSON.stringify(q.titles) !== JSON.stringify(HARNESS_TITLES)) return `harness choices were ${q.titles.join(' | ')}`;
           if (q.initial !== 1) return `harness initial was ${q.initial}, expected 1 (claude-code detected, preselected)`;
           return null;
         } },
@@ -367,6 +425,60 @@ async function main_() {
       check('custom: exit 0 with success', run.result.exitCode === 0 && /Installation successful/.test(run.logs), run.errors);
       checkInstalled('custom walk installs every agent with defaults', path.join(sc.cwd, '.claude', 'skills', 'five-role-team'), {
         agents: ALL_AGENTS, harness: 'claude-code', models: defaultModels(ALL_AGENTS),
+      });
+    }
+    {
+      // "[interaction] Detected Cursor harness is preselected"
+      const sc = sb.scenario('custom-cursor-preselect');
+      fs.mkdirSync(path.join(sc.cwd, '.cursor'));
+      const run = await runInit(sb, sc, ['init'], [
+        { name: 'setup', answer: 'custom' },
+        { name: 'scope', answer: 'local' },
+        { name: 'harness', answer: 'cursor', check: (q) => {
+          if (JSON.stringify(q.titles) !== JSON.stringify(HARNESS_TITLES)) return `harness choices were ${q.titles.join(' | ')}`;
+          if (q.initial !== 2) return `harness initial was ${q.initial}, expected 2 (cursor detected, preselected)`;
+          return null;
+        } },
+        { name: 'agents', answer: ALL_AGENTS },
+        { name: 'keepDefaults', answer: true },
+        { name: 'install', answer: true },
+      ]);
+      checkQuestions('cursor harness preselected (Custom)', run, ['setup', 'scope', 'harness', 'agents', 'keepDefaults', 'install']);
+    }
+    {
+      // "[interaction] Next steps after a Cursor install"
+      const sc = sb.scenario('next-steps-cursor');
+      fs.mkdirSync(path.join(sc.cwd, '.cursor'));
+      const run = await runInit(sb, sc, ['init'], [
+        { name: 'setup', answer: 'default' },
+        { name: 'scope', answer: 'local' },
+      ]);
+      const block = nextStepsBlock(run.logs);
+      const text = block ? block.join('\n') : '';
+      check('next steps (cursor): block is present', block !== null && block.length > 0, run.logs);
+      check('next steps (cursor): start Cursor Agent from project root or reload',
+        /Start Cursor Agent from the project root, or reload the window, so \.cursor\/skills and \.cursor\/agents load\./.test(text), text);
+      check('next steps (cursor): no Claude Code steps',
+        !/Claude Code|\/reload-plugins|CLAUDE\.md|claude plugin uninstall/.test(text), text);
+      const lines = run.logs.split('\n');
+      const headingAt = lines.lastIndexOf('Next steps:');
+      check('next steps (cursor): Next steps is the last output',
+        headingAt >= 0 && lines.slice(headingAt + 1).every((l) => l.startsWith('  ')), lines.slice(-3).join(' | '));
+    }
+    {
+      // "Cursor install does not warn about a Claude marketplace copy"
+      const sc = sb.scenario('cursor-no-shadow');
+      fs.mkdirSync(path.join(sc.cwd, '.cursor'));
+      writeMarketplaceFile(sc.home, SHADOW_MARKETPLACE);
+      const run = await runInit(sb, sc, ['init'], [
+        { name: 'setup', answer: 'default' },
+        { name: 'scope', answer: 'local' },
+      ]);
+      check('cursor marketplace: exit 0 with success', run.result.exitCode === 0 && /Installation successful/.test(run.logs), run.errors);
+      check('cursor marketplace: no shadow warning or uninstall command',
+        !/takes precedence|claude plugin uninstall|marketplace copy/.test(run.logs), run.logs);
+      checkInstalled('cursor marketplace: still installs under .cursor', path.join(sc.cwd, '.cursor', 'skills', 'five-role-team'), {
+        agents: ALL_AGENTS, harness: 'cursor', models: defaultModels(ALL_AGENTS),
       });
     }
     {

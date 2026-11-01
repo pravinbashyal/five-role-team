@@ -680,6 +680,8 @@ function logNextSteps(log, s) {
     log('  1. Start Claude Code from the project root, or run /reload-plugins in an open session.');
     log('  2. Run /five-role-team:apply to implement an OpenSpec change.');
     log("  3. Point the project's CLAUDE.md at /five-role-team:apply.");
+  } else if (s.harness === 'cursor') {
+    log('  Start Cursor Agent from the project root, or reload the window, so .cursor/skills and .cursor/agents load.');
   } else {
     log('  Start a new pi session to load the five-role-team skill.');
   }
@@ -819,7 +821,7 @@ async function promptScopeSelection(options = {}) {
  *
  * @param {object} [options]
  * @param {object} [options.promptsImpl] - Injectable prompts module for tests
- * @param {string} [options.initial] - Harness to preselect ('pi' or 'claude-code'), e.g. the detected one
+ * @param {string} [options.initial] - Harness to preselect ('pi', 'claude-code', or 'cursor'), e.g. the detected one
  * @returns {Promise<string|null>} chosen harness string, or null on cancel
  */
 async function promptHarnessSelection(options = {}) {
@@ -827,6 +829,7 @@ async function promptHarnessSelection(options = {}) {
   const choices = [
     { title: 'pi', value: 'pi' },
     { title: 'claude-code', value: 'claude-code' },
+    { title: 'cursor', value: 'cursor' },
     { title: 'Custom path', value: '__custom__' },
   ];
   const initialIndex = options && options.initial ? choices.findIndex(c => c.value === options.initial) : -1;
@@ -842,7 +845,9 @@ async function promptHarnessSelection(options = {}) {
     { onCancel: () => { cancelled = true; return true; } }
   );
   if (cancelled || !response) return null;
-  if (response.harness === 'pi' || response.harness === 'claude-code') return response.harness;
+  if (response.harness === 'pi' || response.harness === 'claude-code' || response.harness === 'cursor') {
+    return response.harness;
+  }
   if (response.harness !== '__custom__') return null;
   let cCancelled = false;
   const cResponse = await promptsImpl(

@@ -31,7 +31,7 @@
 
 ## 3. Interactive select and Cursor next steps
 
-- [ ] 3.1 Update the TTY harness select and post-install next steps (design D6):
+- [x] 3.1 Update the TTY harness select and post-install next steps (design D6):
   - `promptHarnessSelection` choices: pi, claude-code, cursor, Custom path. Preselect `detectDefaultHarness()`. Treat `'cursor'` like `'pi'` / `'claude-code'` (do not prompt for a path).
   - `logNextSteps`: cursor branch tells the user to start Cursor Agent from the project root (or reload) so `.cursor/skills` and `.cursor/agents` load. No Claude Code, `/reload-plugins`, `CLAUDE.md`, or `claude plugin uninstall` lines. Marketplace shadow ids stay claude-code only. pi-generic else branch unchanged.
 
