@@ -5,6 +5,16 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.2.1] - 2026-11-01
+
+### Fixed
+
+- Orchestrator no longer hard-codes Opus/Sonnet/Haiku for explore/apply dispatches. `/five-role-team:explore` and `/five-role-team:apply` read the project's `.agent-config.json` (or agent `model:` frontmatter) per `conventions/dispatch-models.md` and pass those models on every Task dispatch, so `init` pins (e.g. Grok) are honored.
+
+### Changed
+
+- Agent descriptions and README no longer imply roles always "run on Opus"; shipping defaults remain in frontmatter until `init` rewrites them.
+
 ## [2.2.0] - 2026-11-01
 
 ### Added
@@ -73,6 +83,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Staging npm publish of the package (registry placeholder; no dedicated git release commit).
 
+[2.2.1]: https://github.com/pravinbashyal/five-role-team/compare/v2.2.0...v2.2.1
 [2.2.0]: https://github.com/pravinbashyal/five-role-team/compare/v2.1.1...v2.2.0
 [2.1.1]: https://github.com/pravinbashyal/five-role-team/compare/v2.1.0...v2.1.1
 [2.1.0]: https://github.com/pravinbashyal/five-role-team/compare/v2.0.0...v2.1.0

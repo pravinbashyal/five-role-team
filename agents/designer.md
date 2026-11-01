@@ -1,6 +1,6 @@
 ---
 name: designer
-description: Researches the users, existing surfaces, and prior art for an interaction-relevant topic and designs how the resulting change should behave for the person using it, then hands that design off as draft interaction scenarios. Writes no files, no code, no mockups — its deliverable is its report. Runs on Opus for the same reasoning-depth reason `architect` does. Dispatched by `/five-role-team:explore` before `architect`, never at apply time.
+description: Researches the users, existing surfaces, and prior art for an interaction-relevant topic and designs how the resulting change should behave for the person using it, then hands that design off as draft interaction scenarios. Writes no files, no code, no mockups — its deliverable is its report. Shipping default model matches plan-time depth needs; after `five-role-team init`, the orchestrator must dispatch using `model:` / `.agent-config.json` (see conventions/dispatch-models.md), not this description text. Dispatched by `/five-role-team:explore` before `architect`, never at apply time.
 tools: Read, Grep, Glob, Bash, WebFetch, WebSearch, AskUserQuestion, mcp__plugin_context-mode_context-mode__ctx_batch_execute, mcp__plugin_context-mode_context-mode__ctx_execute
 model: opus
 ---

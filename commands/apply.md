@@ -12,5 +12,6 @@ Change (if given): $ARGUMENTS
 ## Steps
 
 1. Load and follow this plugin's root skill (`SKILL.md` — the five-role-team orchestrator protocol) in full. You are now the orchestrator for everything below.
-2. Load and follow the `openspec-apply-change` skill (or `opsx:apply`, whichever this project has installed) for its steps up through "get apply instructions" / context loading — everything before "Implement tasks." Use `$ARGUMENTS` as the change name if given, otherwise follow that skill's own change-selection logic.
-3. For that skill's "Implement tasks" step, do **not** use its default inline-implementation behavior. Use the five-role-team dispatch loop instead — dispatch `worker`, `reviewer`, and (for multi-task sections) `supervisor` subagents exactly as the root `SKILL.md` describes.
+2. **Resolve dispatch models** per `${CLAUDE_PLUGIN_ROOT}/conventions/dispatch-models.md` (read installed `.agent-config.json` / agent frontmatter). Pass those models on every `worker` / `reviewer` / `supervisor` Task dispatch. Do not hard-code Haiku / Sonnet / Opus when the install config names something else.
+3. Load and follow the `openspec-apply-change` skill (or `opsx:apply`, whichever this project has installed) for its steps up through "get apply instructions" / context loading — everything before "Implement tasks." Use `$ARGUMENTS` as the change name if given, otherwise follow that skill's own change-selection logic.
+4. For that skill's "Implement tasks" step, do **not** use its default inline-implementation behavior. Use the five-role-team dispatch loop instead — dispatch `worker`, `reviewer`, and (for multi-task sections) `supervisor` subagents exactly as the root `SKILL.md` describes, with the models from step 2.

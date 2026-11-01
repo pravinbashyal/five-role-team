@@ -1,6 +1,6 @@
 ---
 name: architect
-description: Explores an idea, problem, or rough request in OpenSpec's explore-mode stance (thinking, codebase investigation, diagramming) and, once the Product Owner confirms scope, captures the outcome as OpenSpec change artifacts (proposal/design/specs/tasks). Never implements code. Runs on Opus for the extra reasoning depth exploration and architectural framing benefit from.
+description: Explores an idea, problem, or rough request in OpenSpec's explore-mode stance (thinking, codebase investigation, diagramming) and, once the Product Owner confirms scope, captures the outcome as OpenSpec change artifacts (proposal/design/specs/tasks). Never implements code. Shipping default model is Opus-class; after `five-role-team init`, the orchestrator must dispatch using `model:` / `.agent-config.json` (see conventions/dispatch-models.md), not this description text.
 tools: Read, Grep, Glob, Bash, Write, Edit, WebFetch, WebSearch, AskUserQuestion, Skill, mcp__plugin_context-mode_context-mode__ctx_batch_execute, mcp__plugin_context-mode_context-mode__ctx_execute
 model: opus
 ---
