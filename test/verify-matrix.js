@@ -38,10 +38,10 @@ function copyPluginSource(destDir, srcDir = REPO_ROOT) {
   fs.symlinkSync(path.join(REPO_ROOT, 'node_modules'), path.join(destDir, 'node_modules'), 'dir');
 }
 
-// Axis values for the 16-cell matrix: scope x harness x mode x agents.
+// Axis values for the 24-cell matrix: scope x harness x mode x agents.
 const MATRIX_AXES = Object.freeze({
   scope: ['global', 'local'],
-  harness: ['pi', 'claude-code'],
+  harness: ['pi', 'claude-code', 'cursor'],
   mode: ['copy', 'link'],
   agents: ['all', 'subset'],
 });
@@ -90,9 +90,21 @@ function uninstallArgv(src, cell) {
 
 // Primary install directory for a cell. `sc` supplies home and cwd (a sandbox or scenario).
 function primaryPath(sc, cell) {
+  if (cell.harness === 'cursor') {
+    return cell.scope === 'global'
+      ? path.join(sc.home, '.cursor', 'skills', 'five-role-team')
+      : path.join(sc.cwd, '.cursor', 'skills', 'five-role-team');
+  }
   return cell.scope === 'global'
     ? path.join(sc.home, '.claude', 'skills', 'five-role-team')
     : path.join(sc.cwd, cell.harness === 'pi' ? '.pi' : '.claude', 'skills', 'five-role-team');
+}
+
+// Flat Cursor Task agents directory for a cell (~/.cursor/agents or ./.cursor/agents).
+function cursorAgentsPath(sc, cell) {
+  return cell.scope === 'global'
+    ? path.join(sc.home, '.cursor', 'agents')
+    : path.join(sc.cwd, '.cursor', 'agents');
 }
 
 // The pi global secondary symlink under ~/.pi/agent/skills (install.js resolveHarnessPath), or null
@@ -120,6 +132,7 @@ module.exports = {
   installArgv,
   uninstallArgv,
   primaryPath,
+  cursorAgentsPath,
   secondaryPath,
   piSecondaryPath,
 };

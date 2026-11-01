@@ -32,6 +32,7 @@
 const fs = require('fs');
 const path = require('path');
 const { createSandbox } = require(path.join(__dirname, 'verify-sandbox.js'));
+const { copyPluginSource } = require(path.join(__dirname, 'verify-matrix.js'));
 
 const REPO = path.join(__dirname, '..');
 const INSTALL = path.join(REPO, 'install.js');
@@ -119,6 +120,21 @@ function listAgents(primary) {
   const dir = path.join(primary, 'agents');
   if (!fs.existsSync(dir)) return [];
   return fs.readdirSync(dir).filter((f) => f.endsWith('.md')).map((f) => f.slice(0, -3)).sort();
+}
+
+function listFlatCursorAgents(agentsRoot) {
+  if (!fs.existsSync(agentsRoot)) return [];
+  return fs.readdirSync(agentsRoot).filter((f) => f.endsWith('.md')).map((f) => f.slice(0, -3)).sort();
+}
+
+function checkCursorFlatAgents(label, agentsRoot, expectAgents, models) {
+  const got = listFlatCursorAgents(agentsRoot);
+  check(`${label}: .cursor/agents lists exactly ${expectAgents.join(',')}`,
+    JSON.stringify(got) === JSON.stringify(expectAgents), `got ${got.join(',')}`);
+  for (const id of expectAgents) {
+    const fm = frontmatterModel(path.join(agentsRoot, `${id}.md`));
+    check(`${label}: flat ${id}.md model is ${models[id]}`, fm === models[id], `got ${fm}`);
+  }
 }
 
 function readConfig(primary) {
@@ -258,6 +274,10 @@ async function main() {
         lstatOrNull(path.join(sc.cwd, '.claude', 'skills', 'five-role-team')) === null);
       checkInstalled('default flag with explicit cursor harness', cursorPrimary,
         { agents: ALL_AGENTS, harness: 'cursor', models: expectedModels(ALL_AGENTS) });
+      check('default flag with explicit cursor harness: pi/ excluded',
+        !fs.existsSync(path.join(cursorPrimary, 'pi')));
+      checkCursorFlatAgents('default flag with explicit cursor harness',
+        path.join(sc.cwd, '.cursor', 'agents'), ALL_AGENTS, expectedModels(ALL_AGENTS));
     }
 
     // ---- Cursor-only tree detects cursor (init --default) ----
@@ -273,6 +293,112 @@ async function main() {
         lstatOrNull(path.join(sc.cwd, 'cursor', 'five-role-team')) === null);
       checkInstalled('default with ./.cursor only', primary,
         { agents: ALL_AGENTS, harness: 'cursor', models: expectedModels(ALL_AGENTS) });
+      checkCursorFlatAgents('[interaction] Default installs into .cursor when detected',
+        path.join(sc.cwd, '.cursor', 'agents'), ALL_AGENTS, expectedModels(ALL_AGENTS));
+    }
+
+    // ---- Place selected agents: local Cursor subset ----
+    {
+      const sc = sb.scenario('cursor-local-subset');
+      const subset = ['architect', 'worker'];
+      const { ok } = runInstall(sb, sc, ['init', '--default', '--local', '--harness', 'cursor', '--agents', subset.join(',')]);
+      check('Local Cursor install copies selected agents: exit 0', ok);
+      checkCursorFlatAgents('Local Cursor install copies selected agents',
+        path.join(sc.cwd, '.cursor', 'agents'), subset, expectedModels(subset));
+    }
+
+    // ---- Place selected agents: global Cursor default ----
+    {
+      const sc = sb.scenario('cursor-global-default');
+      const { ok } = runInstall(sb, sc, ['init', '--default', '--global', '--harness', 'cursor']);
+      check('Global Cursor install copies selected agents: exit 0', ok);
+      checkCursorFlatAgents('Global Cursor install copies selected agents',
+        path.join(sc.home, '.cursor', 'agents'), ALL_AGENTS, expectedModels(ALL_AGENTS));
+    }
+
+    // ---- Cursor link install symlinks agent files ----
+    {
+      const sc = sb.scenario('cursor-link-agents');
+      const src = path.join(sc.cwd, 'plugin-src');
+      copyPluginSource(src, REPO);
+      const r = sb.run([path.join(src, 'install.js'), 'init', '--local', '--harness', 'cursor', '--link'],
+        { home: sc.home, cwd: sc.cwd });
+      const ok = r.status === 0 && /^Installation successful/m.test(r.stdout);
+      check('Cursor link install symlinks agent files: exit 0', ok, `status ${r.status}`);
+      const flat = path.join(sc.cwd, '.cursor', 'agents');
+      for (const id of ALL_AGENTS) {
+        const linkPath = path.join(flat, `${id}.md`);
+        const st = lstatOrNull(linkPath);
+        check(`Cursor link install: ${id}.md is a symlink`, st !== null && st.isSymbolicLink());
+        if (st && st.isSymbolicLink()) {
+          check(`Cursor link install: ${id}.md points at source`,
+            path.resolve(path.dirname(linkPath), fs.readlinkSync(linkPath)) === path.join(src, 'agents', `${id}.md`));
+        }
+      }
+    }
+
+    // ---- Failed Cursor agent write rolls back skill and agents dir ----
+    {
+      const sc = sb.scenario('cursor-agent-rollback');
+      const agentsDir = path.join(sc.cwd, '.cursor', 'agents');
+      fs.mkdirSync(agentsDir, { recursive: true });
+      const userWorker = '# user worker must survive failed install\n';
+      fs.writeFileSync(path.join(agentsDir, 'worker.md'), userWorker);
+      fs.mkdirSync(path.join(agentsDir, 'reviewer.md'));
+      const r = sb.run([INSTALL, 'init', '--default', '--local', '--harness', 'cursor',
+        '--agents', 'architect,worker,reviewer'], { home: sc.home, cwd: sc.cwd });
+      check('failed Cursor agent write: install exits non-zero', r.status !== 0, `status ${r.status}`);
+      check('failed Cursor agent write: partial rollback message',
+        /Partial installation rolled back/.test(r.text), r.text.trim().split('\n').slice(-4).join(' | '));
+      check('failed Cursor agent write: skill primary removed',
+        lstatOrNull(path.join(sc.cwd, '.cursor', 'skills', 'five-role-team')) === null);
+      check('failed Cursor agent write: architect.md not left behind',
+        !fs.existsSync(path.join(agentsDir, 'architect.md')));
+      check('failed Cursor agent write: user worker.md restored',
+        fs.readFileSync(path.join(agentsDir, 'worker.md'), 'utf8') === userWorker);
+      check('failed Cursor agent write: reviewer.md directory untouched',
+        fs.lstatSync(path.join(agentsDir, 'reviewer.md')).isDirectory());
+    }
+
+    // ---- Link mode replaces existing Cursor agent dest names ----
+    {
+      const sc = sb.scenario('cursor-link-replace');
+      const { ok: copyOk } = runInstall(sb, sc, ['init', '--default', '--local', '--harness', 'cursor', '--agents', 'worker']);
+      check('cursor link replace: copy install ok', copyOk);
+      const flatWorker = path.join(sc.cwd, '.cursor', 'agents', 'worker.md');
+      check('cursor link replace: copy left worker.md as a file', lstatOrNull(flatWorker) !== null && !lstatOrNull(flatWorker).isSymbolicLink());
+      const src = path.join(sc.cwd, 'plugin-src');
+      copyPluginSource(src, REPO);
+      const r = sb.run([path.join(src, 'install.js'), 'init', '--local', '--harness', 'cursor', '--link', '--force'],
+        { home: sc.home, cwd: sc.cwd });
+      const linkOk = r.status === 0 && /^Installation successful/m.test(r.stdout);
+      check('cursor link replace: --force --link after copy succeeds', linkOk, `status ${r.status}: ${r.stderr.trim()}`);
+      const st = lstatOrNull(flatWorker);
+      check('cursor link replace: worker.md is now a symlink', st !== null && st.isSymbolicLink());
+    }
+
+    // ---- Uninstall cursor with nothing installed ----
+    {
+      const sc = sb.scenario('cursor-uninstall-empty');
+      const r = sb.run([INSTALL, 'uninstall', '--local', '--harness', 'cursor'], { home: sc.home, cwd: sc.cwd });
+      check('Uninstall cursor with nothing installed: exit 1', r.status === 1, `status ${r.status}`);
+      check('Uninstall cursor with nothing installed: message',
+        /Nothing to uninstall/.test(r.text), r.text.trim());
+    }
+
+    // ---- Uninstall cursor leaves unrelated agents-dir files ----
+    {
+      const sc = sb.scenario('cursor-uninstall-leaves-other');
+      const { ok } = runInstall(sb, sc, ['init', '--default', '--local', '--harness', 'cursor', '--agents', 'worker']);
+      check('cursor uninstall leaves other: install ok', ok);
+      const flat = path.join(sc.cwd, '.cursor', 'agents');
+      fs.writeFileSync(path.join(flat, 'custom-agent.md'), '# keep me\n');
+      const u = sb.run([INSTALL, 'uninstall', '--local', '--harness', 'cursor'], { home: sc.home, cwd: sc.cwd });
+      check('cursor uninstall leaves other: exit 0', u.status === 0, u.text.trim());
+      check('cursor uninstall leaves other: worker.md removed', !fs.existsSync(path.join(flat, 'worker.md')));
+      check('cursor uninstall leaves other: custom-agent.md remains', fs.existsSync(path.join(flat, 'custom-agent.md')));
+      check('cursor uninstall leaves other: skill primary removed',
+        lstatOrNull(path.join(sc.cwd, '.cursor', 'skills', 'five-role-team')) === null);
     }
 
     // ---- [interaction] Default flag without a terminal (claude-code, local) ----
@@ -287,6 +413,8 @@ async function main() {
       check('default flag without a terminal: installed as a real directory under ./.claude/skills', st !== null && st.isDirectory() && !st.isSymbolicLink());
       const models = expectedModels(ALL_AGENTS);
       checkInstalled('default flag without a terminal', primary, { agents: ALL_AGENTS, harness: 'claude-code', models });
+      check('Claude Code install does not write Cursor agents',
+        lstatOrNull(path.join(sc.cwd, '.cursor', 'agents')) === null);
       check('default flag without a terminal: nothing written under HOME', snapshot(sc.home) === '', snapshot(sc.home));
     }
 

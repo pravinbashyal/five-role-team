@@ -3,8 +3,8 @@
 // Manual install-mode matrix for install.js (task 9.3).
 //
 // Runs every combination of
-//   scope {global, local} x harness {pi, claude-code} x mode {copy, link} x agents {all, subset}
-// which is 16 cells, and checks the installed layout of each one.
+//   scope {global, local} x harness {pi, claude-code, cursor} x mode {copy, link} x agents {all, subset}
+// which is 24 cells, and checks the installed layout of each one.
 //
 // Each cell runs in its own sandbox (verify-sandbox.js: a fresh temp HOME and temp cwd;
 // the guard aborts if HOME resolves to the real home). The plugin source is copied to
@@ -39,7 +39,7 @@
 //     Decision 3 is only enforced for copy installs.
 //
 // Coverage: the matrix is checked against an independent literal copy of the axis values
-// (dropping an axis value fails), against the cell count of 16, and every expected cell key
+// (dropping an axis value fails), against the cell count of 24, and every expected cell key
 // must actually have run (dropping a cell fails).
 //
 // Output: one PASS/FAIL line per cell, then COVERAGE and SUMMARY lines. Exit 0 only when every
@@ -51,7 +51,7 @@ const fs = require('fs');
 const path = require('path');
 const { createSandbox } = require(path.join(__dirname, 'verify-sandbox.js'));
 const {
-  copyPluginSource, installArgv, primaryPath, piSecondaryPath, cellsFrom, MATRIX, MATRIX_AXES, OVERRIDE, SUBSET,
+  copyPluginSource, installArgv, primaryPath, cursorAgentsPath, piSecondaryPath, cellsFrom, MATRIX, MATRIX_AXES, OVERRIDE, SUBSET,
 } = require(path.join(__dirname, 'verify-matrix.js'));
 
 const SOURCE = process.env.INSTALL_MODES_SOURCE
@@ -62,16 +62,17 @@ const SOURCE = process.env.INSTALL_MODES_SOURCE
 // purpose: it must not be derived from verify-matrix.js, or a dropped axis value would go unnoticed.
 const EXPECTED_AXES = Object.freeze({
   scope: ['global', 'local'],
-  harness: ['pi', 'claude-code'],
+  harness: ['pi', 'claude-code', 'cursor'],
   mode: ['copy', 'link'],
   agents: ['all', 'subset'],
 });
-const EXPECTED_CELLS = 16;
+const EXPECTED_CELLS = 24;
 
 // Agents installed for "all" (every agent) and for "subset".
 const SUPPORTED = Object.freeze({
   'claude-code': ['architect', 'designer', 'intern', 'reviewer', 'supervisor', 'worker'],
   pi: ['architect', 'designer', 'intern', 'reviewer', 'supervisor', 'worker'],
+  cursor: ['architect', 'designer', 'intern', 'reviewer', 'supervisor', 'worker'],
 });
 
 // Agents that ship a pi-only file at pi/agents/<id>.md (installed for pi only, when selected).
@@ -162,9 +163,17 @@ function runCell(sb, cell) {
   if (cell.scope === 'local') {
     need(!present(path.join(sc.home, '.claude', 'skills', 'five-role-team')),
       'local: nothing installed under ~/.claude/skills');
+    if (cell.harness === 'cursor') {
+      need(!present(path.join(sc.home, '.cursor', 'skills', 'five-role-team')),
+        'cursor local: nothing installed under ~/.cursor/skills');
+    }
   } else {
     need(!present(path.join(sc.cwd, '.claude')) && !present(path.join(sc.cwd, '.pi')),
       'global: nothing installed under ./.claude or ./.pi');
+    if (cell.harness === 'cursor') {
+      need(!present(path.join(sc.cwd, '.cursor', 'skills', 'five-role-team')),
+        'cursor global: nothing installed under ./.cursor/skills in cwd');
+    }
   }
 
   // pi secondary location.
@@ -220,7 +229,23 @@ function runCell(sb, cell) {
         need(pfm === models[id], `pi: pi/agents/${id}.md model is ${models[id]} (got ${pfm})`);
       }
     } else {
-      need(!present(path.join(primary, 'pi')), 'pi/ directory absent (claude-code, or no pi-only agent selected)');
+      need(!present(path.join(primary, 'pi')), 'pi/ directory absent (claude-code, cursor, or no pi-only agent selected)');
+    }
+
+    if (cell.harness === 'cursor') {
+      const flatAgents = cursorAgentsPath(sc, cell);
+      const gotFlat = listMd(flatAgents);
+      need(sameList(gotFlat, expectedAgents),
+        `cursor copy: .cursor/agents lists exactly ${expectedAgents.join(',')} (got ${gotFlat.join(',')})`);
+      for (const id of expectedAgents) {
+        const fm = readModel(path.join(flatAgents, `${id}.md`));
+        need(fm === models[id], `cursor copy: flat ${id}.md model is ${models[id]} (got ${fm})`);
+      }
+    } else {
+      const localFlat = path.join(sc.cwd, '.cursor', 'agents');
+      const globalFlat = path.join(sc.home, '.cursor', 'agents');
+      need(!present(localFlat) && !present(globalFlat),
+        'non-cursor copy: no files under .cursor/agents');
     }
   } else {
     need(pstat !== null && pstat.isSymbolicLink(), 'link: primary is a symlink');
@@ -230,6 +255,21 @@ function runCell(sb, cell) {
       'link: agents/ lists the whole source agents directory (agent choice not applied)');
     need(!present(path.join(primary, '.agent-config.json')) && !present(path.join(src, '.agent-config.json')),
       'link: no .agent-config.json in the link or the source');
+
+    if (cell.harness === 'cursor') {
+      const flatAgents = cursorAgentsPath(sc, cell);
+      const srcAgents = listMd(path.join(src, 'agents'));
+      const gotFlat = listMd(flatAgents);
+      need(sameList(gotFlat, srcAgents),
+        `cursor link: .cursor/agents lists every source agent (got ${gotFlat.join(',')})`);
+      for (const id of srcAgents) {
+        const linkPath = path.join(flatAgents, `${id}.md`);
+        const st = lstat(linkPath);
+        need(st !== null && st.isSymbolicLink(), `cursor link: ${id}.md is a symlink`);
+        need(path.resolve(path.dirname(linkPath), fs.readlinkSync(linkPath)) === path.join(src, 'agents', `${id}.md`),
+          `cursor link: ${id}.md points at source agents/${id}.md`);
+      }
+    }
   }
 
   return { ok: problems.length === 0, checks, problems };
@@ -310,7 +350,7 @@ function main() {
 
   // Coverage: the matrix must be exactly the literal axes, and every expected cell must run.
   const axesMatch = ['scope', 'harness', 'mode', 'agents'].every((k) => sameList(MATRIX_AXES[k], EXPECTED_AXES[k]));
-  if (!axesMatch) coverageFail('matrix axes differ from scope {global,local} x harness {pi,claude-code} x mode {copy,link} x agents {all,subset}');
+  if (!axesMatch) coverageFail('matrix axes differ from scope {global,local} x harness {pi,claude-code,cursor} x mode {copy,link} x agents {all,subset}');
   const expectedKeys = cellsFrom(EXPECTED_AXES).map((c) => c.key);
   if (expectedKeys.length !== EXPECTED_CELLS) coverageFail(`expected cell list has ${expectedKeys.length} cells, not ${EXPECTED_CELLS}`);
   if (MATRIX.length !== EXPECTED_CELLS) coverageFail(`matrix has ${MATRIX.length} cells, not ${EXPECTED_CELLS}`);

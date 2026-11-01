@@ -4,11 +4,15 @@ const path = require('path');
 const defaultPrompts = require('prompts');
 
 /**
- * Whether the install target harness is pi (pi-only files such as pi/agents/ are installed only for pi).
+ * Whether the install target harness is Cursor (flat `.cursor/agents/` copies apply only for cursor).
  *
  * @param {string|null|undefined} harness - Harness name or path from `--harness`
  * @returns {boolean}
  */
+function isCursorHarness(harness) {
+  return typeof harness === 'string' && harness.trim() === 'cursor';
+}
+
 function isPiHarness(harness) {
   if (!harness || typeof harness !== 'string') {
     return false;
@@ -194,6 +198,7 @@ async function promptAgentSelection(options = {}) {
 module.exports = {
   AGENT_CATALOG,
   KNOWN_AGENT_IDS,
+  isCursorHarness,
   isPiHarness,
   formatAgentChoiceTitle,
   buildAgentSelectChoices,

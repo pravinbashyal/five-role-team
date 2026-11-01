@@ -16,7 +16,7 @@
 
 ## 2. Cursor skill and agent file layout
 
-- [ ] 2.1 Implement Cursor copy/link install and uninstall (design D3, D4, D5):
+- [x] 2.1 Implement Cursor copy/link install and uninstall (design D3, D4, D5):
   - Copy the skill to the D1 paths. Also write selected `agents/<id>.md` (same model frontmatter as inside the skill) to `./.cursor/agents/` or `~/.cursor/agents/`. Link mode: symlink the skill and every source `agents/<id>.md` into that agents dir (no agent filter).
   - Exclude `pi/` for cursor. Do not write `.cursor/agents/` for claude-code or pi.
   - Include Cursor agent-file writes in the install transaction so a failed install rolls them back.
@@ -54,7 +54,19 @@
   - `npm test` passes
   - `openspec validate add-cursor-init-harness --strict` passes
 
+## 5. Release
+
+- [ ] 5.1 Ship a minor npm release for the cursor harness (design Migration Plan):
+  - Bump `package.json` `version` from `2.1.1` to the next minor (`2.2.0`).
+  - Confirm `npm test` and `npm pack --dry-run` still look right after the bump.
+  - Publish `@pravinbashyal/five-role-team@2.2.0` with `npm publish` (public access already in `publishConfig`).
+  - Verify `npx --yes @pravinbashyal/five-role-team@2.2.0 --version` (or `npm view … version`) reports `2.2.0`.
+
+  Verify:
+  - `package.json` version is `2.2.0`
+  - published package is visible on the registry at that version
+  - `openspec validate add-cursor-init-harness --strict` still passes
+
 ## Workflow follow-up
 
-- Apply this change with `/five-role-team:apply add-cursor-init-harness` (do not implement from explore).
 - Archive after the project's review requirements are satisfied.

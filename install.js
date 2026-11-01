@@ -305,6 +305,19 @@ function resolveHarnessPath(harness, isGlobal) {
 }
 
 /**
+ * Flat Cursor Task agents directory for the given install scope.
+ *
+ * @param {boolean} isGlobal
+ * @returns {string}
+ */
+function resolveCursorAgentsPath(isGlobal) {
+  if (isGlobal) {
+    return path.join(os.homedir(), '.cursor', 'agents');
+  }
+  return path.join('.', '.cursor', 'agents');
+}
+
+/**
  * Read default models from source agent frontmatter files
  *
  * Looks up each agent's source file (agents/<id>.md, falling back to
@@ -1157,7 +1170,14 @@ async function main(argv = args, options = {}) {
         resolved.base,
         path.join(os.homedir(), '.claude', 'skills'),
         path.join(os.homedir(), '.pi', 'agent', 'skills'),
+        path.join(os.homedir(), '.cursor', 'skills'),
       ];
+      const cursorAgentsRoot = isCursorHarness(parsed.harness)
+        ? path.resolve(resolveCursorAgentsPath(parsed.global))
+        : null;
+      const cursorAgentIds = cursorAgentsRoot ? cursorAgentIdsForUninstall(resolved.primary) : [];
+      const cursorAgentsPresent = cursorAgentsRoot
+        && anyCursorAgentFilesPresent(cursorAgentsRoot, cursorAgentIds);
       const removed = primaryPresent
         ? uninstallInstall(resolved.primary, { sourceDir, expected: resolved.primary, protect })
         : null;
@@ -1178,7 +1198,13 @@ async function main(argv = args, options = {}) {
       } else if (secondary) {
         log('Warning: left ' + secondary.path + ' in place because ' + secondary.reason + '.');
       }
-      if (!removed && !(secondary && secondary.kind === 'symlink')) {
+      let cursorUninstalled = { removed: [] };
+      if (cursorAgentsRoot) {
+        cursorUninstalled = uninstallCursorAgentFiles(cursorAgentsRoot, cursorAgentIds);
+        cursorUninstalled.removed.forEach((file) => log('Removed ' + file));
+      }
+      if (!removed && !(secondary && secondary.kind === 'symlink')
+          && cursorUninstalled.removed.length === 0 && !cursorAgentsPresent) {
         throw new Error('Nothing to uninstall: no five-role-team installation at ' + path.resolve(resolved.primary));
       }
     } catch (err) {
@@ -1268,7 +1294,16 @@ async function main(argv = args, options = {}) {
   // Rollback state: only what THIS run creates is ever removed on failure.
   // A confirmed/--force overwrite moves the old install aside to a hidden
   // sibling first; on failure it is restored, on success it is deleted.
-  const tx = { secondary: null, primary: null, backup: null, secondaryBackup: null, createdDirs: [], sourceDir };
+  const tx = {
+    secondary: null,
+    primary: null,
+    backup: null,
+    secondaryBackup: null,
+    createdDirs: [],
+    cursorAgents: [],
+    cursorAgentBackups: [],
+    sourceDir,
+  };
   // Absolute paths actually used, recorded for the success summary (task 8.2).
   const outcome = { primary: null, secondary: null, linkSource: null, cfgPath: null };
   let resolved;
@@ -1303,8 +1338,11 @@ async function main(argv = args, options = {}) {
         if (tx.secondaryBackup) log('Removed existing secondary location at ' + secConflict.path);
       }
     }
+    const cursorAgentsRoot = isCursorHarness(parsed.harness)
+      ? path.resolve(resolveCursorAgentsPath(parsed.global))
+      : null;
     try {
-      ensureInstallDirectories(resolved).createdPaths.forEach(d => tx.createdDirs.push(d));
+      ensureInstallDirectories(resolved, { cursorAgentsRoot }).createdPaths.forEach(d => tx.createdDirs.push(d));
     } catch (err) {
       if (err.createdPaths) err.createdPaths.forEach(d => tx.createdDirs.push(d));
       throw err;
@@ -1323,6 +1361,11 @@ async function main(argv = args, options = {}) {
         if (!sec.existed) tx.secondary = sec.target;
         outcome.secondary = sec.target;
         log('Linked ' + sec.target + ' -> ' + sec.source);
+      }
+      if (cursorAgentsRoot) {
+        log('Linking Cursor agent files into ' + cursorAgentsRoot);
+        const cursorLinked = linkCursorAgentFiles(sourceDir, cursorAgentsRoot, tx);
+        log('Linked ' + cursorLinked.paths.length + ' Cursor agent file(s) into ' + cursorAgentsRoot);
       }
     } else {
       const installSet = buildInstallSet(sourceDir, result.selectedAgents, parsed.harness);
@@ -1349,10 +1392,16 @@ async function main(argv = args, options = {}) {
         outcome.secondary = sec.target;
         log('Linked ' + sec.target + ' -> ' + sec.source);
       }
+      if (cursorAgentsRoot) {
+        log('Writing Cursor agent files into ' + cursorAgentsRoot);
+        const cursorCopied = copyCursorAgentFiles(sourceDir, cursorAgentsRoot, result.selectedAgents, result.models, tx);
+        log('Wrote ' + cursorCopied.paths.length + ' Cursor agent file(s) into ' + cursorAgentsRoot);
+      }
     }
   } catch (err) {
     const lines = ['Error: ' + describeFsError(err)];
-    if (tx.backup || tx.secondaryBackup || tx.primary || tx.createdDirs.length > 0) {
+    if (tx.backup || tx.secondaryBackup || tx.primary || tx.cursorAgents.length > 0
+        || tx.cursorAgentBackups.length > 0 || tx.createdDirs.length > 0) {
       // tx.primary is only set once the write phase started, so its target
       // was absent before this run and is safe to remove.
       const rb = rollbackInstall(tx);
@@ -1403,8 +1452,30 @@ const {
   buildAgentSelectPromptQuestion,
   promptAgentSelection,
   resolveSelectedAgents,
+  isCursorHarness,
 } = require('./select-agents');
-const { ensureInstallDirectories, buildInstallSet, copyInstall, writeAgentConfigFile, linkInstall, linkSecondary, detectExistingInstall, detectSecondaryConflict, moveAsideExistingInstall, discardBackup, rollbackInstall, uninstallInstall, uninstallPiSecondary, describeFsError, validatePluginSource } = require('./install-files');
+const {
+  ensureInstallDirectories,
+  buildInstallSet,
+  copyInstall,
+  writeAgentConfigFile,
+  linkInstall,
+  linkSecondary,
+  copyCursorAgentFiles,
+  linkCursorAgentFiles,
+  cursorAgentIdsForUninstall,
+  uninstallCursorAgentFiles,
+  anyCursorAgentFilesPresent,
+  detectExistingInstall,
+  detectSecondaryConflict,
+  moveAsideExistingInstall,
+  discardBackup,
+  rollbackInstall,
+  uninstallInstall,
+  uninstallPiSecondary,
+  describeFsError,
+  validatePluginSource,
+} = require('./install-files');
 const { buildAgentConfig } = require('./agent-config');
 const {
   validateModel,
@@ -1419,6 +1490,7 @@ module.exports = {
   parseArgs,
   showUsage,
   resolveHarnessPath,
+  resolveCursorAgentsPath,
   readDefaultModels,
   detectDefaultHarness,
   buildScopeQuestion,

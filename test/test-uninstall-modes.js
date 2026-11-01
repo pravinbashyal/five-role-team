@@ -3,8 +3,8 @@
 // Uninstall matrix for install.js (task 9.4).
 //
 // Runs every combination of
-//   scope {global, local} x harness {pi, claude-code} x mode {copy, link} x agents {all, subset}
-// which is 16 cells. Each cell installs, then uninstalls with the `uninstall` subcommand, and
+//   scope {global, local} x harness {pi, claude-code, cursor} x mode {copy, link} x agents {all, subset}
+// which is 24 cells. Each cell installs, then uninstalls with the `uninstall` subcommand, and
 // checks that the removal is clean.
 //
 // Each cell runs in its own sandbox (verify-sandbox.js: a fresh temp HOME and temp cwd; the guard
@@ -38,7 +38,7 @@ const fs = require('fs');
 const path = require('path');
 const { createSandbox, REAL_HOME } = require(path.join(__dirname, 'verify-sandbox.js'));
 const {
-  copyPluginSource, installArgv, uninstallArgv, primaryPath, secondaryPath, cellsFrom, MATRIX, MATRIX_AXES,
+  copyPluginSource, installArgv, uninstallArgv, primaryPath, cursorAgentsPath, secondaryPath, cellsFrom, MATRIX, MATRIX_AXES, SUBSET,
 } = require(path.join(__dirname, 'verify-matrix.js'));
 
 const SOURCE = process.env.UNINSTALL_MODES_SOURCE
@@ -49,11 +49,13 @@ const SOURCE = process.env.UNINSTALL_MODES_SOURCE
 // purpose: it must not be derived from verify-matrix.js, or a dropped axis value would go unnoticed.
 const EXPECTED_AXES = Object.freeze({
   scope: ['global', 'local'],
-  harness: ['pi', 'claude-code'],
+  harness: ['pi', 'claude-code', 'cursor'],
   mode: ['copy', 'link'],
   agents: ['all', 'subset'],
 });
-const EXPECTED_CELLS = 16;
+const EXPECTED_CELLS = 24;
+
+const ALL_CURSOR_AGENTS = Object.freeze(['architect', 'designer', 'intern', 'reviewer', 'supervisor', 'worker']);
 
 // Sibling content that must survive uninstall (created in every skills dir the install used).
 const SIB_DIR = 'other-skill';
@@ -177,16 +179,29 @@ function runCell(sb, cell) {
 
   const primary = primaryPath(sc, cell);
   const secondary = secondaryPath(sc, cell);
-  const roots = [primary, ...(secondary ? [secondary] : [])];
+  const cursorFlat = cell.harness === 'cursor' ? cursorAgentsPath(sc, cell) : null;
+  const expectedCursorAgents = cell.harness === 'cursor'
+    ? (cell.mode === 'link' ? ALL_CURSOR_AGENTS : (cell.agents === 'subset' ? [...SUBSET] : ALL_CURSOR_AGENTS))
+    : [];
+  const cursorAgentFiles = cursorFlat
+    ? expectedCursorAgents.map((id) => path.join(cursorFlat, `${id}.md`))
+    : [];
+  const roots = [primary, ...(secondary ? [secondary] : []), ...cursorAgentFiles];
   const parents = [...new Set(roots.map((r) => path.dirname(r)))];
   need(present(primary), `install created the primary at ${primary}`);
   if (secondary) need(present(secondary), 'install created the pi secondary symlink');
+  if (cursorFlat) {
+    for (const f of cursorAgentFiles) need(present(f), `install created Cursor agent file ${f}`);
+  }
 
   // ---- sibling content in every skills dir the install used ----
   for (const dir of parents) {
     fs.mkdirSync(path.join(dir, SIB_DIR), { recursive: true });
     fs.writeFileSync(path.join(dir, SIB_DIR, 'SKILL.md'), SIB_SKILL);
     fs.writeFileSync(path.join(dir, SIB_FILE), SIB_FILE_TEXT);
+  }
+  if (cursorFlat) {
+    fs.writeFileSync(path.join(cursorFlat, 'custom-agent.md'), '# unrelated agent, must survive uninstall\n');
   }
   const before = snapshotSandbox(sc, src);
 
@@ -203,10 +218,19 @@ function runCell(sb, cell) {
     need(/^Source directory .* was left untouched\./m.test(u.stdout), 'link: uninstall reports the source left untouched');
   }
   if (secondary) need(/^Removed pi secondary symlink /m.test(u.stdout), 'pi global: uninstall reports the secondary removed');
+  if (cursorFlat) {
+    for (const id of expectedCursorAgents) {
+      need(new RegExp(`^Removed .*${id}\\.md$`, 'm').test(u.stdout), `cursor: uninstall reports ${id}.md removed`);
+    }
+  }
 
   // Primary gone (copy dir incl. .agent-config.json, or the link).
   need(!present(primary), 'primary install is gone');
   if (secondary) need(!present(secondary), 'pi global: ~/.pi/agent/skills/five-role-team secondary symlink is gone');
+  if (cursorFlat) {
+    for (const f of cursorAgentFiles) need(!present(f), `cursor agent file gone: ${f}`);
+    need(present(path.join(cursorFlat, 'custom-agent.md')), 'unrelated .cursor/agents/custom-agent.md survives');
+  }
 
   // Parent skills dirs still exist as directories, and the siblings survive unchanged.
   for (const dir of parents) {
@@ -277,7 +301,7 @@ function main() {
 
   // Coverage: the matrix must be exactly the literal axes, and every expected cell must run.
   const axesMatch = ['scope', 'harness', 'mode', 'agents'].every((k) => sameList(MATRIX_AXES[k], EXPECTED_AXES[k]));
-  if (!axesMatch) coverageFail('matrix axes differ from scope {global,local} x harness {pi,claude-code} x mode {copy,link} x agents {all,subset}');
+  if (!axesMatch) coverageFail('matrix axes differ from scope {global,local} x harness {pi,claude-code,cursor} x mode {copy,link} x agents {all,subset}');
   const expectedKeys = cellsFrom(EXPECTED_AXES).map((c) => c.key);
   if (expectedKeys.length !== EXPECTED_CELLS) coverageFail(`expected cell list has ${expectedKeys.length} cells, not ${EXPECTED_CELLS}`);
   if (MATRIX.length !== EXPECTED_CELLS) coverageFail(`matrix has ${MATRIX.length} cells, not ${EXPECTED_CELLS}`);

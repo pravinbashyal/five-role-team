@@ -2,7 +2,7 @@
 
 const fs = require('fs');
 const path = require('path');
-const { isPiHarness } = require('./select-agents');
+const { AGENT_CATALOG, isPiHarness } = require('./select-agents');
 
 // Plain-language cause for the fs error codes an install can realistically hit.
 const FS_ERROR_CAUSES = {
@@ -130,17 +130,21 @@ function assertWritable(dir, message) {
  * here: later steps copy into / link at those paths.
  *
  * @param {{base: string, primary: string, secondary: string|null}} resolved
+ * @param {{cursorAgentsRoot?: string|null}} [opts]
  * @returns {{created: string[], existing: string[], createdPaths: string[]}} Absolute directory paths by
  *   outcome; `createdPaths` lists every directory created (including missing ancestors), outermost first
  * @throws {Error} with a clear message if a directory is invalid or cannot be created
  */
-function ensureInstallDirectories(resolved) {
+function ensureInstallDirectories(resolved, opts = {}) {
   if (!resolved || !resolved.primary) {
     throw new Error('Resolved installation paths are required');
   }
   const dirs = [path.dirname(resolved.primary)];
   if (resolved.secondary) {
     dirs.push(path.dirname(resolved.secondary));
+  }
+  if (opts.cursorAgentsRoot) {
+    dirs.push(path.resolve(opts.cursorAgentsRoot));
   }
 
   const created = [];
@@ -457,6 +461,217 @@ function writeAgentConfigFile(targetDir, config) {
     throw new Error(`Cannot write configuration file ${file}: ${describeFsError(err)}`);
   }
   return { path: file };
+}
+
+/** Catalog agent ids (for Cursor link uninstall when no .agent-config.json exists). */
+const CATALOG_AGENT_IDS = Object.freeze(AGENT_CATALOG.map((a) => a.id));
+
+/**
+ * Move an existing file or symlink aside before a Cursor agent write (rollback can restore it).
+ *
+ * @param {string} filePath
+ * @returns {{from: string, backup: string}|null}
+ */
+function moveAsideExistingCursorAgent(filePath) {
+  const abs = path.resolve(filePath);
+  const st = fs.lstatSync(abs, { throwIfNoEntry: false });
+  if (!st) return null;
+  if (st.isDirectory()) {
+    throw new Error(`Cannot install Cursor agent at ${abs}: path exists but is not a file or symlink`);
+  }
+  const backup = path.join(
+    path.dirname(abs),
+    `${BACKUP_PREFIX}${process.pid}-${Date.now()}-${path.basename(abs)}`
+  );
+  try {
+    fs.renameSync(abs, backup);
+  } catch (err) {
+    throw new Error(`Failed to move aside ${abs}: ${describeFsError(err)}`);
+  }
+  return { from: abs, backup };
+}
+
+/**
+ * Record a Cursor agent destination in the install transaction before writing.
+ *
+ * @param {string} dest
+ * @param {{cursorAgents: string[], cursorAgentBackups: Array<{from: string, backup: string}>}} rollback
+ */
+function prepareCursorAgentDest(dest, rollback) {
+  const abs = path.resolve(dest);
+  const aside = moveAsideExistingCursorAgent(abs);
+  if (aside) rollback.cursorAgentBackups.push(aside);
+  rollback.cursorAgents.push(abs);
+}
+
+/**
+ * Copy selected agent markdown files into a Cursor flat agents directory (copy mode).
+ *
+ * @param {string} sourceDir
+ * @param {string} agentsRoot - e.g. ./.cursor/agents or ~/.cursor/agents
+ * @param {string[]} selectedAgents
+ * @param {Object<string,string>} models
+ * @param {{cursorAgents: string[], cursorAgentBackups: Array<{from: string, backup: string}>}|null} [rollback]
+ * @returns {{root: string, paths: string[]}} Absolute paths written
+ */
+function copyCursorAgentFiles(sourceDir, agentsRoot, selectedAgents, models, rollback = null) {
+  if (typeof sourceDir !== 'string' || sourceDir.trim().length === 0) {
+    throw new Error('Plugin source directory is required');
+  }
+  if (typeof agentsRoot !== 'string' || agentsRoot.trim().length === 0) {
+    throw new Error('Cursor agents directory is required');
+  }
+  if (!Array.isArray(selectedAgents)) {
+    throw new Error('Selected agents must be an array');
+  }
+  const root = path.resolve(sourceDir);
+  const destRoot = path.resolve(agentsRoot);
+  const modelMap = models || {};
+  const written = { root: destRoot, paths: [] };
+  try {
+    fs.mkdirSync(destRoot, { recursive: true });
+    for (const id of selectedAgents) {
+      const src = path.join(root, 'agents', `${id}.md`);
+      if (!fs.existsSync(src)) {
+        throw new Error(`Agent source file not found: agents/${id}.md`);
+      }
+      const model = modelMap[id];
+      if (!model) throw new Error(`No model configured for agent ${id}`);
+      const content = fs.readFileSync(src, 'utf8');
+      const dest = path.join(destRoot, `${id}.md`);
+      if (rollback) prepareCursorAgentDest(dest, rollback);
+      fs.writeFileSync(dest, applyModelToFrontmatter(content, model));
+      written.paths.push(path.resolve(dest));
+    }
+  } catch (err) {
+    if (err && /^(Agent source|No model configured|Plugin source|Cursor agents|Selected agents|Cannot install Cursor agent|Failed to move aside)/.test(err.message)) {
+      throw err;
+    }
+    throw new Error(`Cursor agent installation failed: ${describeFsError(err)}`);
+  }
+  return written;
+}
+
+/**
+ * Symlink every source agents/<id>.md into the Cursor flat agents directory (link mode).
+ *
+ * @param {string} sourceDir
+ * @param {string} agentsRoot
+ * @param {{cursorAgents: string[], cursorAgentBackups: Array<{from: string, backup: string}>}|null} [rollback]
+ * @returns {{root: string, paths: string[]}} Absolute symlink paths created
+ */
+function linkCursorAgentFiles(sourceDir, agentsRoot, rollback = null) {
+  if (typeof sourceDir !== 'string' || sourceDir.trim().length === 0) {
+    throw new Error('Plugin source directory is required');
+  }
+  if (typeof agentsRoot !== 'string' || agentsRoot.trim().length === 0) {
+    throw new Error('Cursor agents directory is required');
+  }
+  const root = path.resolve(sourceDir);
+  const destRoot = path.resolve(agentsRoot);
+  const agentsDir = path.join(root, 'agents');
+  let names;
+  try {
+    names = fs.readdirSync(agentsDir).filter((n) => n.endsWith('.md')).sort();
+  } catch (err) {
+    throw new Error(`Cursor agent link failed: agents directory missing in ${root}`);
+  }
+  const written = { root: destRoot, paths: [] };
+  try {
+    fs.mkdirSync(destRoot, { recursive: true });
+    for (const name of names) {
+      const src = path.join(agentsDir, name);
+      if (!fs.statSync(src).isFile()) continue;
+      const dest = path.join(destRoot, name);
+      if (rollback) prepareCursorAgentDest(dest, rollback);
+      fs.symlinkSync(src, dest, 'file');
+      written.paths.push(path.resolve(dest));
+    }
+  } catch (err) {
+    if (err && /^(Cannot install Cursor agent|Failed to move aside|Cursor agent link failed|Plugin source|Cursor agents)/.test(err.message)) {
+      throw err;
+    }
+    throw new Error(`Cursor agent link failed: ${describeFsError(err)}`);
+  }
+  return written;
+}
+
+/**
+ * Agent ids to remove on Cursor uninstall: config when the primary is a copy install,
+ * otherwise the full catalog (link mode or missing primary).
+ *
+ * @param {string} primary - Installed skill primary path
+ * @returns {string[]}
+ */
+function cursorAgentIdsForUninstall(primary) {
+  const abs = path.resolve(primary);
+  const st = fs.lstatSync(abs, { throwIfNoEntry: false });
+  if (st && st.isDirectory() && !st.isSymbolicLink()) {
+    const cfgFile = path.join(abs, AGENT_CONFIG_FILE);
+    try {
+      const cfg = JSON.parse(fs.readFileSync(cfgFile, 'utf8'));
+      if (cfg && Array.isArray(cfg.agents) && cfg.agents.length > 0) {
+        return cfg.agents.slice();
+      }
+    } catch (err) {
+      // fall through to catalog
+    }
+  }
+  return CATALOG_AGENT_IDS.slice();
+}
+
+/**
+ * Remove Cursor flat agent files placed by this installer. Only the given ids are touched.
+ *
+ * @param {string} agentsRoot
+ * @param {string[]} agentIds
+ * @returns {{removed: string[], paths: string[]}} Absolute paths removed
+ */
+function uninstallCursorAgentFiles(agentsRoot, agentIds) {
+  if (typeof agentsRoot !== 'string' || agentsRoot.trim().length === 0) {
+    throw new Error('Cursor agents directory is required');
+  }
+  if (!Array.isArray(agentIds)) {
+    throw new Error('Agent ids must be an array');
+  }
+  const destRoot = path.resolve(agentsRoot);
+  const removed = [];
+  for (const id of agentIds) {
+    const file = path.join(destRoot, `${id}.md`);
+    const st = fs.lstatSync(file, { throwIfNoEntry: false });
+    if (!st) continue;
+    if (st.isSymbolicLink()) {
+      try {
+        fs.unlinkSync(file);
+      } catch (err) {
+        throw new Error(`Failed to remove symlink ${file}: ${err.message}`);
+      }
+      removed.push(file);
+      continue;
+    }
+    if (!st.isFile()) {
+      throw new Error(`Refusing to remove ${file}: not a regular file or symlink`);
+    }
+    try {
+      fs.unlinkSync(file);
+    } catch (err) {
+      throw new Error(`Failed to remove ${file}: ${err.message}`);
+    }
+    removed.push(file);
+  }
+  return { removed, paths: removed };
+}
+
+/**
+ * True when any of the given agent files exist under agentsRoot.
+ *
+ * @param {string} agentsRoot
+ * @param {string[]} agentIds
+ * @returns {boolean}
+ */
+function anyCursorAgentFilesPresent(agentsRoot, agentIds) {
+  const destRoot = path.resolve(agentsRoot);
+  return agentIds.some((id) => fs.lstatSync(path.join(destRoot, `${id}.md`), { throwIfNoEntry: false }));
 }
 
 /**
@@ -894,6 +1109,8 @@ function discardBackup(backup) {
  * @param {{from: string, backup: string}|null} [state.backup] - Previous install moved aside
  * @param {{from: string, backup: string}|null} [state.secondaryBackup] - Previous pi secondary moved aside
  * @param {string[]} [state.createdDirs] - Directories created by this run, outermost first
+ * @param {string[]} [state.cursorAgents] - Cursor flat agent paths written this run
+ * @param {Array<{from: string, backup: string}>} [state.cursorAgentBackups] - Prior agent files moved aside
  * @param {string} [state.sourceDir] - Plugin source to protect
  * @returns {{removed: string[], restored: string|null, errors: string[]}}
  */
@@ -914,6 +1131,17 @@ function rollbackInstall(state) {
     out.removed.push(abs);
   };
   if (state.secondary) attempt(`removing ${state.secondary}`, () => removePath(state.secondary));
+  for (const agentFile of (state.cursorAgents || []).slice().reverse()) {
+    attempt(`removing cursor agent ${agentFile}`, () => removePath(agentFile));
+  }
+  for (const b of (state.cursorAgentBackups || []).slice().reverse()) {
+    attempt(`restoring cursor agent ${b.from}`, () => {
+      if (fs.lstatSync(b.from, { throwIfNoEntry: false })) {
+        throw new Error('path still exists; previous file kept at ' + b.backup);
+      }
+      fs.renameSync(b.backup, b.from);
+    });
+  }
   if (state.primary) attempt(`removing ${state.primary}`, () => removePath(state.primary));
   if (state.backup) {
     attempt(`restoring ${state.backup.from}`, () => {
@@ -963,6 +1191,14 @@ module.exports = {
   uninstallInstall,
   uninstallPiSecondary,
   linkInstall,
+  moveAsideExistingCursorAgent,
+  prepareCursorAgentDest,
+  copyCursorAgentFiles,
+  linkCursorAgentFiles,
+  cursorAgentIdsForUninstall,
+  uninstallCursorAgentFiles,
+  anyCursorAgentFilesPresent,
+  CATALOG_AGENT_IDS,
   ensureDirectory,
   ensureInstallDirectories,
   buildInstallSet,
