@@ -61,12 +61,12 @@ On a terminal, `five-role-team init` first prints the default setup: the detecte
    - **Default (recommended)** installs every agent for the detected harness with its default model. It asks nothing else except where to install.
    - **Custom** asks, in order, for the harness, which agents to include, and whether to keep the default models (answer no to pick a model for each agent). It then shows a review and asks `Install? (Y/n)`. Nothing is written until you confirm.
 2. **Where should five-role-team be installed?** (asked in both branches)
-   - **This project** (preselected) installs into `./.claude/skills/five-role-team/`, or `./.pi/skills/five-role-team/` for pi. Only this project sees it.
-   - **All projects for this user** installs into `~/.claude/skills/five-role-team/`, so every project sees it.
+   - **This project** (preselected) installs into `./.claude/skills/five-role-team/`, `./.pi/skills/five-role-team/` for pi, or `./.cursor/skills/five-role-team/` for Cursor. Only this project sees it.
+   - **All projects for this user** installs into `~/.claude/skills/five-role-team/`, or `~/.cursor/skills/five-role-team/` for Cursor, so every project sees it.
 
 The paths in the question are the real paths for the harness in use.
 
-The harness is detected from the current directory: pi when `./.pi` exists and `./.claude` does not, otherwise Claude Code. `--harness` overrides it.
+The harness is detected from the current directory: Cursor when `./.cursor` exists and `./.claude` and `./.pi` do not; pi when `./.pi` exists and `./.claude` does not; otherwise Claude Code. `--harness` overrides it.
 
 If five-role-team is already installed at the chosen path, `init` asks `Overwrite existing installation at <path>?` with No as the default. Choosing No, or pressing Ctrl-C or Esc at any question, prints "Installation cancelled. Nothing was changed." and changes nothing.
 
@@ -115,7 +115,7 @@ If required flags are missing, `init` exits 1 and writes nothing. The hint sugge
 | --- | --- |
 | `--default` | Install the default setup with no setup questions. |
 | `--global` / `--local` | Scope: `--global` installs for all projects for this user, `--local` installs into this project. Without a terminal, `init` defaults to `--local`. |
-| `--harness <name\|path>` | `pi`, `claude-code`, or a custom skills directory path. |
+| `--harness <name\|path>` | `pi`, `claude-code`, `cursor`, or a custom skills directory path. |
 | `--agents <list>` | Comma-separated agents to install, e.g. `architect,worker,reviewer`. Skips the agent question. Without it, every agent for the harness is installed. |
 | `--agent-models <map>` | Comma-separated `agent=model` pairs, e.g. `"worker=sonnet,reviewer=opus"`. Skips the model questions. Short names are `opus`, `sonnet` and `haiku`; a name containing `/` is used as-is. |
 | `--force` | Overwrite an existing installation without asking. Needed in scripts, because a run without a terminal cannot confirm. |
@@ -131,14 +131,16 @@ Running `five-role-team` with no subcommand prints usage and installs nothing. `
 ```bash
 five-role-team uninstall --local --harness claude-code
 five-role-team uninstall --global --harness pi
+five-role-team uninstall --local --harness cursor
 ```
 
-Uninstall never prompts. It needs both a scope (`--global` or `--local`) and a `--harness`. It removes the installed copy, including `.agent-config.json`, and for pi also removes the `~/.pi/agent/skills/five-role-team` symlink. With nothing installed it exits 1 with "Nothing to uninstall".
+Uninstall never prompts. It needs both a scope (`--global` or `--local`) and a `--harness`. It removes the installed copy, including `.agent-config.json`, and for pi also removes the `~/.pi/agent/skills/five-role-team` symlink. For Cursor it also removes the agent files this install placed under `.cursor/agents/`. With nothing installed it exits 1 with "Nothing to uninstall".
 
 ### Harness notes
 
 - **`claude-code`** installs to `~/.claude/skills/five-role-team` (global) or `./.claude/skills/five-role-team` (local). For a local install, start Claude Code from the project root.
 - **`pi`** installs to `~/.claude/skills/five-role-team` (global) with a symlink at `~/.pi/agent/skills/five-role-team`, or to `./.pi/skills/five-role-team` (local).
+- **`cursor`** installs the skill to `~/.cursor/skills/five-role-team` (global) or `./.cursor/skills/five-role-team` (local), and writes selected agent files to `~/.cursor/agents/` or `./.cursor/agents/`. Start Cursor Agent from the project root, or reload the window, so `.cursor/skills` and `.cursor/agents` load.
 - **A custom path** installs to `<path>/five-role-team`.
 
 ### Troubleshooting

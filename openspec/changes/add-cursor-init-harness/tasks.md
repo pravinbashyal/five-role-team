@@ -46,7 +46,7 @@
 
 ## 4. README
 
-- [ ] 4.1 Document the cursor harness in `README.md` (design D6, D7): `--harness` values include `cursor`; detection matches D2; harness notes give local/global skill paths and the agents dir; uninstall example may use `--harness cursor`. Do not add Cursor slash commands or marketplace uninstall to Cursor notes.
+- [x] 4.1 Document the cursor harness in `README.md` (design D6, D7): `--harness` values include `cursor`; detection matches D2; harness notes give local/global skill paths and the agents dir; uninstall example may use `--harness cursor`. Do not add Cursor slash commands or marketplace uninstall to Cursor notes.
 
   Verify:
   - scenario "README documents the cursor harness"
