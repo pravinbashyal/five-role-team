@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.2.2] - 2026-11-02
+
+### Fixed
+
+- `architect` and `designer` no longer call `AskUserQuestion` from inside a subagent, which the harness blocks (`No such tool available: AskUserQuestion`). Both roles now surface design forks and write-confirmations in their handoff (`architect` under **Open questions**, `designer` under **Open forks**), and `/five-role-team:explore` — running in the main session where `AskUserQuestion` is available — asks the Product Owner and re-dispatches the subagent with the answers. `AskUserQuestion` removed from both agents' `tools:` frontmatter.
+
 ## [2.2.1] - 2026-11-01
 
 ### Fixed
