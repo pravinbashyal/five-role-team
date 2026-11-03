@@ -20,7 +20,8 @@ const REPO_ROOT = path.join(__dirname, '..');
 
 // Entries of the plugin source that an install needs. See the header: edit only here.
 const SOURCE_ENTRIES = Object.freeze(['SKILL.md', 'agents', 'pi', 'commands', 'conventions', '.claude-plugin',
-  'install.js', 'install-files.js', 'select-agents.js', 'configure-models.js', 'agent-config.js']);
+  'install.js', 'install-files.js', 'select-agents.js', 'configure-models.js', 'agent-config.js',
+  'claude-permissions.js']);
 
 // Copy SOURCE_ENTRIES from srcDir into destDir. No node_modules link is made.
 function copySourceEntries(srcDir, destDir) {
