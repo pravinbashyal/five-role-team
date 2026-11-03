@@ -59,7 +59,7 @@
 
 ## 3. Whole-change verification
 
-- [ ] 3.1 Run `npm test` and `openspec validate init-claude-permissions --strict`.
+- [x] 3.1 Run `npm test` and `openspec validate init-claude-permissions --strict`.
   - In a temp project directory with a temp HOME, run:
     - `five-role-team init --default`
     - `five-role-team init --default --force`
