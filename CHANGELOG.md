@@ -5,6 +5,14 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.3.0] - 2026-11-03
+
+### Added
+
+- `five-role-team init` now writes the Claude Code permissions the orchestrator loop needs, so dispatching `worker`, `reviewer` and `supervisor` and running the commit workers' git commands no longer prompts. For the `claude-code` harness it merges one `Agent(five-role-team:<id>)` rule per installed agent (the whole catalog under `--link`) plus `Bash(git add|commit|status|diff|rev-parse|log:*)` into `./.claude/settings.local.json`, or `~/.claude/settings.json` with `--global`. The merge is idempotent and keeps other keys and existing order; a malformed file is left unchanged with a warning listing the rules to add by hand.
+- `--no-permissions` on `init` and `uninstall` skips the settings step.
+- `five-role-team uninstall` removes only the `Agent(five-role-team:*)` rules it added and keeps the git rules.
+
 ## [2.2.2] - 2026-11-02
 
 ### Fixed
