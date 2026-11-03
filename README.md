@@ -140,7 +140,7 @@ If required flags are missing, `init` exits 1 and writes nothing. The hint sugge
 | `--force` | Overwrite an existing installation without asking. Needed in scripts, because a run without a terminal cannot confirm. |
 | `--verbose` | Print one "Copying ..." line per directory. Without it, the install is quiet. |
 | `--install-openspec` | Install the OpenSpec CLI (`npm install -g @fission-ai/openspec`) without asking when it is missing, in any mode. Does nothing when it is present. Without it, `init` asks on a terminal and only warns otherwise. |
-| `--no-permissions` | Do not write Claude Code permission rules (`claude-code` harness only). By default `init` adds the agent and git rules described in [Claude Code permissions](#claude-code-permissions). |
+| `--no-permissions` | Do not write Claude Code permission rules (`claude-code` harness only). By default `init` adds the agent and git rules described in [Claude Code permissions](#claude-code-permissions). On `uninstall` it leaves the settings file untouched, so the agent rules stay. |
 | `--help`, `-h` | Show usage. |
 | `--version`, `-v` | Print the installed version and exit. Installs nothing. |
 
@@ -155,6 +155,8 @@ five-role-team uninstall --local --harness cursor
 ```
 
 Uninstall never prompts. It needs both a scope (`--global` or `--local`) and a `--harness`. It removes the installed copy, including `.agent-config.json`, and for pi also removes the `~/.pi/agent/skills/five-role-team` symlink. For Cursor it also removes the agent files this install placed under `.cursor/agents/`. With nothing installed it exits 1 with "Nothing to uninstall".
+
+With the `claude-code` harness, uninstall also removes the `Agent(five-role-team:<id>)` rules from the same settings file `init` wrote: `./.claude/settings.local.json` for `--local`, `~/.claude/settings.json` for `--global`. It prints one line naming the rules removed, for example `Claude Code permissions: removed 6 rule(s) from <path> (...)`. It runs only when something was uninstalled, so with nothing installed the settings file is not touched. The git `Bash` rules and every other setting stay, because you may rely on them for other work; delete them by hand if you want them gone. If the settings file is not valid JSON or has the wrong shape, uninstall leaves it unchanged, prints a warning, and still exits as the uninstall result says. Pass `--no-permissions` to keep the settings file untouched entirely.
 
 ### Harness notes
 

@@ -45,7 +45,7 @@
     - "Next steps" is still last.
   - Verify: `test/test-command-grammar.js` checks that the flag parses and appears in help.
   - Verify: `node test/verify-readme-commands.js` passes.
-- [ ] 2.2 Wire agent-rule removal into `uninstall` per design D8.
+- [x] 2.2 Wire agent-rule removal into `uninstall` per design D8.
   - Run it only for harness `claude-code`, without `--no-permissions`, and only after the file uninstall removed something.
   - Use the same scope-to-file mapping as `init`.
   - Print `Claude Code permissions: removed N rule(s) from <abs path> (...)` when N > 0.

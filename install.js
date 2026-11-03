@@ -494,10 +494,15 @@ OPTIONS:
   uninstall               Remove the installed plugin for the given scope and harness.
                           A copy install is deleted, including .agent-config.json.
                           A --link install only loses its symlink; the source is never touched.
+                          With the claude-code harness, every Agent(five-role-team:<id>) rule is removed from
+                          ./.claude/settings.local.json (--local) or ~/.claude/settings.json (--global) after
+                          something was uninstalled. The git Bash rules and all other settings are kept.
+                          A malformed settings file only prints a warning and leaves the file unchanged.
                           Exits 1 with "Nothing to uninstall" when nothing is installed.
-                          Uses --global|--local and --harness. Other recognised options
-                          (--link, --force, --default, --verbose, --install-openspec, --agents, --agent-models) are
-                          accepted but have no effect. Unknown flags or arguments are an error (exit 1).
+                          Uses --global|--local and --harness. --no-permissions leaves the settings file
+                          untouched. Other recognised options (--link, --force, --default, --verbose,
+                          --install-openspec, --agents, --agent-models) are accepted but have no effect.
+                          Unknown flags or arguments are an error (exit 1).
 
   INTERACTIVE MODE (init on a terminal, without --default):
   - Asks "How do you want to set up five-role-team?": Default (recommended) or Custom
@@ -724,6 +729,30 @@ function runClaudePermissionsStep(log, s) {
     log('Claude Code permissions: added ' + res.added.length + ' rule(s) to ' + res.path);
   } else {
     log('Claude Code permissions: all ' + res.rules.length + ' rule(s) already present in ' + res.path);
+  }
+  return res;
+}
+
+/**
+ * Remove the plugin's `Agent(five-role-team:<id>)` allow rules during `uninstall` (openspec change
+ * init-claude-permissions, task 2.2, design D8). Called only after the file uninstall removed
+ * something, and only for the claude-code harness without --no-permissions (callers check both).
+ * Git Bash rules and every other setting are kept. Never throws and never changes the exit status.
+ *
+ * @param {function} log - stdout logger
+ * @param {object} s
+ * @param {boolean} s.global - True for global scope (~/.claude/settings.json), false for local
+ * @returns {{status: 'removed'|'warned', path: string}}
+ */
+function runClaudePermissionsRemoval(log, s) {
+  const file = settingsPathFor(s.global ? 'global' : 'local');
+  const res = removeClaudePermissions(file);
+  if (res.status === 'warned') {
+    log('Warning: Claude Code permissions were not removed from ' + res.path + ': ' + res.reason + '.');
+    log('  Remove the Agent(five-role-team:<id>) entries under "permissions" > "allow" by hand.');
+  } else if (res.removed.length > 0) {
+    log('Claude Code permissions: removed ' + res.removed.length + ' rule(s) from ' + res.path
+      + ' (' + res.removed.join(', ') + ')');
   }
   return res;
 }
@@ -1245,9 +1274,15 @@ async function main(argv = args, options = {}) {
         cursorUninstalled = uninstallCursorAgentFiles(cursorAgentsRoot, cursorAgentIds);
         cursorUninstalled.removed.forEach((file) => log('Removed ' + file));
       }
-      if (!removed && !(secondary && secondary.kind === 'symlink')
-          && cursorUninstalled.removed.length === 0 && !cursorAgentsPresent) {
+      const removedSomething = !!removed || (!!secondary && secondary.kind === 'symlink')
+        || cursorUninstalled.removed.length > 0;
+      if (!removedSomething && !cursorAgentsPresent) {
         throw new Error('Nothing to uninstall: no five-role-team installation at ' + path.resolve(resolved.primary));
+      }
+      // Claude Code agent rules (openspec change init-claude-permissions, task 2.2, design D8). Runs
+      // only when the file uninstall removed something, and never changes the exit status.
+      if (removedSomething && parsed.harness === 'claude-code' && !parsed.noPermissions) {
+        runClaudePermissionsRemoval(log, { global: parsed.global });
       }
     } catch (err) {
       return fail('Error: ' + err.message);
@@ -1530,6 +1565,7 @@ const { buildAgentConfig } = require('./agent-config');
 const {
   settingsPathFor,
   applyClaudePermissions,
+  removeClaudePermissions,
 } = require('./claude-permissions');
 const {
   validateModel,
