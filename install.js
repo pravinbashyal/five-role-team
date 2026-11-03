@@ -72,6 +72,7 @@ function parseArgs(argv) {
     defaultSetup: false,
     verbose: false,
     installOpenspec: false,
+    noPermissions: false,
     uninstall: false,
     init: false,
     version: false,
@@ -121,6 +122,10 @@ function parseArgs(argv) {
       // Install the OpenSpec CLI when it is missing, without a question (task 1.2). Accepted for
       // uninstall too, with no effect, like the other init options (see the uninstall help).
       parsed.installOpenspec = true;
+    } else if (arg === '--no-permissions') {
+      // Skip the Claude Code permission allow-list on init (openspec change init-claude-permissions,
+      // design D7). Accepted for uninstall too, where it keeps the settings file untouched.
+      parsed.noPermissions = true;
     } else if (arg === '--help' || arg === '-h') {
       // Handled before parsing (see the early --help check); accepted here so it
       // is not reported as an unknown flag.
@@ -480,6 +485,10 @@ OPTIONS:
   --install-openspec      Install the OpenSpec CLI (npm install -g @fission-ai/openspec) without asking
                           when it is missing, in any mode. Does nothing when it is already present.
                           Without it, init asks on a terminal and only warns otherwise.
+  --no-permissions        Do not write Claude Code permissions. With the claude-code harness, init
+                          otherwise adds Agent(five-role-team:<id>) and git Bash rules to
+                          ./.claude/settings.local.json (--local) or ~/.claude/settings.json (--global).
+                          Existing settings are only appended to, never replaced.
 
   UNINSTALL (subcommand, must be the first argument):
   uninstall               Remove the installed plugin for the given scope and harness.
@@ -689,6 +698,34 @@ function logNextSteps(log, s) {
     log('  Warning: the marketplace copy ' + id + ' takes precedence over this install, so the new install will not load.');
     log('  To remove the marketplace copy, run: claude plugin uninstall ' + id + ' (the installer does not uninstall anything).');
   }
+}
+
+/**
+ * Claude Code permission allow-list written by `init` (openspec change init-claude-permissions,
+ * task 2.1, design D3, D6). Runs after the install summary and before the OpenSpec step. Only the
+ * claude-code harness is handled, and --no-permissions skips it (callers check both). Never throws
+ * and never changes the exit status: a settings problem prints a warning with the rules to add by
+ * hand and leaves the file unchanged.
+ *
+ * @param {function} log - stdout logger
+ * @param {object} s
+ * @param {boolean} s.global - True for global scope (~/.claude/settings.json), false for local
+ * @param {string[]} s.agentIds - Agent ids to allow: the selected agents, or the full catalog under --link
+ * @returns {{status: 'added'|'present'|'warned', path: string}}
+ */
+function runClaudePermissionsStep(log, s) {
+  const file = settingsPathFor(s.global ? 'global' : 'local');
+  const res = applyClaudePermissions(file, s.agentIds);
+  if (res.status === 'warned') {
+    log('Warning: Claude Code permissions were not written to ' + res.path + ': ' + res.reason + '.');
+    log('  Add these rules by hand under "permissions" > "allow":');
+    res.rules.forEach(rule => log('    ' + rule));
+  } else if (res.status === 'added') {
+    log('Claude Code permissions: added ' + res.added.length + ' rule(s) to ' + res.path);
+  } else {
+    log('Claude Code permissions: all ' + res.rules.length + ' rule(s) already present in ' + res.path);
+  }
+  return res;
 }
 
 // OpenSpec CLI check (openspec change init-openspec-check, task 1.1, design D1-D6).
@@ -1433,6 +1470,14 @@ async function main(argv = args, options = {}) {
     selectedAgents: result.selectedAgents,
     models: result.models,
   });
+  // Claude Code permissions (openspec change init-claude-permissions, task 2.1). Written by default
+  // for the claude-code harness; --no-permissions skips it. Never changes result.exitCode.
+  if (parsed.harness === 'claude-code' && !parsed.noPermissions) {
+    runClaudePermissionsStep(log, {
+      global: parsed.global,
+      agentIds: parsed.link ? AGENT_CATALOG.map(agent => agent.id) : result.selectedAgents,
+    });
+  }
   // OpenSpec CLI check (task 1.1). Asked only in the interactive flow (terminal, no --default,
   // no --link); elsewhere it warns only. Never changes result.exitCode.
   await runOpenspecStep({
@@ -1482,6 +1527,10 @@ const {
   validatePluginSource,
 } = require('./install-files');
 const { buildAgentConfig } = require('./agent-config');
+const {
+  settingsPathFor,
+  applyClaudePermissions,
+} = require('./claude-permissions');
 const {
   validateModel,
   expandModelName,

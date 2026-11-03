@@ -92,6 +92,22 @@ Without a terminal, or with `--default` or `--link`, `init` never asks and never
 
 A newly installed `openspec` may not be on `PATH` until you start a new shell.
 
+#### Claude Code permissions
+
+With the `claude-code` harness, `init` also merges an allow-list into Claude Code's settings, without asking, so the apply loop does not prompt for each agent dispatch or commit step. The list is:
+
+- one `Agent(five-role-team:<id>)` rule per installed agent (every agent under `--link`), and
+- six git rules: `Bash(git add:*)`, `Bash(git commit:*)`, `Bash(git status:*)`, `Bash(git diff:*)`, `Bash(git rev-parse:*)` and `Bash(git log:*)`.
+
+The file used depends on the scope:
+
+- **Local** (the default) writes `./.claude/settings.local.json` in the current directory. Claude Code reads this file from the git repository root, so run `init` from the repository root.
+- **Global** (`--global`) writes `~/.claude/settings.json`, so the git rules apply in every project for this user, including `git commit`. Use `--no-permissions` if you do not want that.
+
+The merge only appends rules that are missing, matched exactly. Existing rules, their order and every other setting are kept, and a run that adds nothing leaves the file unchanged. If the file is not valid JSON, or its `permissions` or `permissions.allow` has the wrong shape, `init` leaves the file unchanged, prints the rules to add by hand, and still succeeds. Other harnesses (`pi`, `cursor`, custom paths) do not read or write these settings.
+
+Pass `--no-permissions` to skip this step. `init` then prints nothing about permissions.
+
 ### Without a terminal, or with `--default`
 
 `five-role-team init --default` installs the default setup with no questions, whether or not you are in a terminal. Scope is this project unless you pass `--global`.
@@ -124,6 +140,7 @@ If required flags are missing, `init` exits 1 and writes nothing. The hint sugge
 | `--force` | Overwrite an existing installation without asking. Needed in scripts, because a run without a terminal cannot confirm. |
 | `--verbose` | Print one "Copying ..." line per directory. Without it, the install is quiet. |
 | `--install-openspec` | Install the OpenSpec CLI (`npm install -g @fission-ai/openspec`) without asking when it is missing, in any mode. Does nothing when it is present. Without it, `init` asks on a terminal and only warns otherwise. |
+| `--no-permissions` | Do not write Claude Code permission rules (`claude-code` harness only). By default `init` adds the agent and git rules described in [Claude Code permissions](#claude-code-permissions). |
 | `--help`, `-h` | Show usage. |
 | `--version`, `-v` | Print the installed version and exit. Installs nothing. |
 

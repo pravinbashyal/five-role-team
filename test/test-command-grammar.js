@@ -11,6 +11,7 @@
 //   - "[interaction] Unknown argument hint"
 //   - parseArgs accepts --default and --verbose
 //   - parseArgs accepts --install-openspec on init (and ignores it on uninstall), and --help lists it
+//   - parseArgs accepts --no-permissions on init and uninstall, and --help lists it (task 2.1)
 //
 // Exit 0 only when every check passes.
 const path = require('path');
@@ -148,6 +149,31 @@ async function main_() {
     const { result, out, err } = await run(['--help']);
     check('--help (main): lists --install-openspec, exit 0',
       result.exitCode === 0 && /--install-openspec/.test(out) && err === '', `${result.exitCode} ${err}`);
+  }
+
+  // ---- --no-permissions (init-claude-permissions task 2.1, design D7) ----
+  {
+    const p = parseArgs(['init', '--default', '--no-permissions']);
+    check('parseArgs: init --no-permissions parses without errors and sets noPermissions',
+      p.errors.length === 0 && p.init === true && p.noPermissions === true, JSON.stringify(p.errors));
+    const plain = parseArgs(['init', '--default']);
+    check('parseArgs: noPermissions is false without the flag', plain.noPermissions === false);
+    const un = parseArgs(['uninstall', '--local', '--harness', 'claude-code', '--no-permissions']);
+    check('parseArgs: uninstall accepts --no-permissions with no error',
+      un.errors.length === 0 && un.uninstall === true && un.noPermissions === true, JSON.stringify(un.errors));
+  }
+  {
+    const lines = [];
+    showUsage((l) => lines.push(l));
+    const text = lines.join('\n');
+    check('showUsage: lists --no-permissions under OTHER OPTIONS',
+      /--no-permissions/.test(text) && text.indexOf('--no-permissions') > text.indexOf('OTHER OPTIONS')
+      && text.indexOf('--no-permissions') < text.indexOf('UNINSTALL (subcommand'));
+  }
+  {
+    const { result, out, err } = await run(['--help']);
+    check('--help (main): lists --no-permissions, exit 0',
+      result.exitCode === 0 && /--no-permissions/.test(out) && err === '', `${result.exitCode} ${err}`);
   }
 
   // ---- --version / -v (task 7.1) ----

@@ -25,7 +25,7 @@
 
 ## 2. CLI wiring
 
-- [ ] 2.1 Wire the step into `init` in `install.js` per design D3, D6 and D7.
+- [x] 2.1 Wire the step into `init` in `install.js` per design D3, D6 and D7.
   - Run it only for harness `claude-code` and only when `--no-permissions` is not given.
   - Settings file: local `./.claude/settings.local.json`; global `~/.claude/settings.json`.
   - Agent ids: the selected agents, or the full `AGENT_CATALOG` under `--link`.

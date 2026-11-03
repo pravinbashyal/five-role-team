@@ -22,7 +22,12 @@
 //   - OpenSpec CLI check (init-openspec-check task 1.2): --default warns without installing,
 //     --default --install-openspec installs (and a failed install still exits 0), a present CLI
 //     is a no-op, and a no-terminal run without the flag asks nothing
+//   - Claude Code permissions (init-claude-permissions task 2.1): local, --agents, --global and
+//     --link allow-lists, pi and cursor write nothing, --no-permissions writes nothing, a malformed
+//     settings file is left unchanged with exit 0, a --force re-run adds nothing, and "Next steps"
+//     stays last
 //
+
 // Most runs are child processes of install.js (stdin empty, so not a TTY). The OpenSpec checks
 // give each child a PATH that holds only stub `openspec` and `npm` binaries, so no real npm runs
 // and a real openspec on this machine cannot change the result. One scenario calls main()
@@ -668,6 +673,116 @@ async function main() {
         /OpenSpec CLI \(openspec\) was not found on PATH/.test(text) && text.includes(OPENSPEC_CMD), text);
       check('openspec main() no terminal: plugin installed',
         lstatOrNull(path.join(sc.cwd, '.claude', 'skills', 'five-role-team')) !== null);
+    }
+    // ---- Claude Code permissions (init-claude-permissions task 2.1, design D3, D4, D6, D7) ----
+    {
+      const GIT_RULES = ['Bash(git add:*)', 'Bash(git commit:*)', 'Bash(git status:*)',
+        'Bash(git diff:*)', 'Bash(git rev-parse:*)', 'Bash(git log:*)'];
+      const agentRules = (ids) => ids.map((id) => `Agent(five-role-team:${id})`);
+      const allowOf = (file) => JSON.parse(fs.readFileSync(file, 'utf8')).permissions.allow;
+      const permLines = (text) => text.split('\n').filter((l) => /^Claude Code permissions: /.test(l));
+      const localFile = (sc) => path.join(sc.cwd, '.claude', 'settings.local.json');
+      const globalFile = (sc) => path.join(sc.home, '.claude', 'settings.json');
+      const isFile = (p) => {
+        const st = lstatOrNull(p);
+        return st !== null && st.isFile();
+      };
+
+      // Local --default: created with every agent, then the six git rules, in order.
+      const sc = sb.scenario('perm-local-default');
+      const local = runInstall(sb, sc, ['init', '--default', '--harness', 'claude-code']);
+      // Default selection follows the catalog order (not ALL_AGENTS, which is alphabetical).
+      const localExpected = [...agentRules(installer.AGENT_CATALOG.map((a) => a.id)), ...GIT_RULES];
+      check('permissions local --default: install succeeded', local.ok, `status ${local.r.status} ${local.r.stderr}`);
+      check('permissions local --default: ./.claude/settings.local.json created', isFile(localFile(sc)));
+      check('permissions local --default: allow is agent rules then six git Bash rules in order',
+        isFile(localFile(sc)) && JSON.stringify(allowOf(localFile(sc))) === JSON.stringify(localExpected),
+        isFile(localFile(sc)) ? JSON.stringify(allowOf(localFile(sc))) : 'missing');
+      check('permissions local --default: one line with the count and absolute path',
+        local.r.stdout.includes(`Claude Code permissions: added ${localExpected.length} rule(s) to ${localFile(sc)}`)
+        && permLines(local.r.stdout).length === 1, JSON.stringify(permLines(local.r.stdout)));
+      const permIdx = local.r.stdout.indexOf('Claude Code permissions:');
+      const summaryIdx = local.r.stdout.indexOf('Installation successful');
+      const nextIdx = local.r.stdout.indexOf('Next steps:');
+      check('permissions local --default: line after the success summary and before "Next steps" (last block)',
+        summaryIdx >= 0 && permIdx > summaryIdx && nextIdx > permIdx, `${summaryIdx} ${permIdx} ${nextIdx}`);
+
+      // --agents limits the agent rules.
+      const scA = sb.scenario('perm-agents-limited');
+      const limited = runInstall(sb, scA, ['init', '--harness', 'claude-code', '--agents', 'worker,reviewer']);
+      check('permissions --agents worker,reviewer: install succeeded', limited.ok, `status ${limited.r.status}`);
+      check('permissions --agents worker,reviewer: only those agent rules plus git rules',
+        isFile(localFile(scA)) && JSON.stringify(allowOf(localFile(scA)))
+          === JSON.stringify([...agentRules(['worker', 'reviewer']), ...GIT_RULES]));
+
+      // --global writes the sandbox HOME settings and no local file.
+      const scG = sb.scenario('perm-global');
+      const global = runInstall(sb, scG, ['init', '--default', '--global', '--harness', 'claude-code']);
+      check('permissions --global --default: install succeeded', global.ok, `status ${global.r.status}`);
+      check('permissions --global: <sandbox HOME>/.claude/settings.json holds the rules',
+        isFile(globalFile(scG)) && JSON.stringify(allowOf(globalFile(scG))) === JSON.stringify(localExpected));
+      check('permissions --global: no ./.claude/settings.local.json written', lstatOrNull(localFile(scG)) === null);
+      check('permissions --global: line names the HOME settings path',
+        global.r.stdout.includes(`Claude Code permissions: added ${localExpected.length} rule(s) to ${globalFile(scG)}`));
+
+      // --link allows every catalog agent.
+      const scL = sb.scenario('perm-link');
+      const linked = runInstall(sb, scL, ['init', '--link', '--local', '--harness', 'claude-code']);
+      check('permissions --link: install succeeded', linked.ok, `status ${linked.r.status} ${linked.r.stderr}`);
+      check('permissions --link: an agent rule for every catalog agent, then git rules',
+        isFile(localFile(scL)) && JSON.stringify(allowOf(localFile(scL)))
+          === JSON.stringify([...agentRules(installer.AGENT_CATALOG.map((a) => a.id)), ...GIT_RULES]));
+
+      // pi and cursor never touch Claude Code settings and print no permissions line.
+      for (const harness of ['pi', 'cursor']) {
+        const scH = sb.scenario(`perm-${harness}`);
+        const other = runInstall(sb, scH, ['init', '--default', '--harness', harness]);
+        check(`permissions ${harness}: install succeeded`, other.ok, `status ${other.r.status}`);
+        check(`permissions ${harness}: no Claude settings file written (local or global)`,
+          lstatOrNull(localFile(scH)) === null && lstatOrNull(globalFile(scH)) === null);
+        check(`permissions ${harness}: no permissions line printed`, permLines(other.r.stdout).length === 0);
+      }
+
+      // --no-permissions writes nothing and prints nothing for the step.
+      const scN = sb.scenario('perm-no-flag');
+      const skipped = runInstall(sb, scN, ['init', '--default', '--harness', 'claude-code', '--no-permissions']);
+      check('permissions --no-permissions: install succeeded', skipped.ok, `status ${skipped.r.status}`);
+      check('permissions --no-permissions: no settings file created', lstatOrNull(localFile(scN)) === null);
+      check('permissions --no-permissions: no permissions line printed', permLines(skipped.r.stdout).length === 0);
+
+      // Malformed settings: bytes unchanged, warning lists the rules, plugin installed, exit 0.
+      const malformed = [
+        ['malformed JSON', 'perm-bad-json', '{ "permissions": { "allow": [ '],
+        ['allow not an array', 'perm-bad-allow', '{ "permissions": { "allow": "Bash(git log:*)" } }\n'],
+      ];
+      for (const [label, scenarioName, bytes] of malformed) {
+        const scM = sb.scenario(scenarioName);
+        fs.mkdirSync(path.dirname(localFile(scM)), { recursive: true });
+        fs.writeFileSync(localFile(scM), bytes);
+        const bad = runInstall(sb, scM, ['init', '--default', '--harness', 'claude-code']);
+        check(`permissions ${label}: exit 0 and install completed`,
+          bad.r.status === 0 && bad.ok, `status ${bad.r.status} ${bad.r.stderr}`);
+        check(`permissions ${label}: settings bytes unchanged`,
+          fs.readFileSync(localFile(scM), 'utf8') === bytes);
+        check(`permissions ${label}: warning names the file and lists the rules by hand`,
+          /Warning: Claude Code permissions were not written to .*settings\.local\.json/.test(bad.r.stdout)
+          && bad.r.stdout.includes('Agent(five-role-team:worker)') && bad.r.stdout.includes('Bash(git log:*)'),
+          bad.r.stdout);
+        check(`permissions ${label}: plugin files installed`,
+          lstatOrNull(path.join(scM.cwd, '.claude', 'skills', 'five-role-team')) !== null);
+      }
+
+      // Re-running with --force adds nothing and leaves identical bytes.
+      const scR = sb.scenario('perm-rerun');
+      runInstall(sb, scR, ['init', '--default', '--harness', 'claude-code']);
+      const firstBytes = fs.readFileSync(localFile(scR), 'utf8');
+      const rerun = runInstall(sb, scR, ['init', '--default', '--harness', 'claude-code', '--force']);
+      check('permissions re-run --force: install succeeded', rerun.ok, `status ${rerun.r.status}`);
+      check('permissions re-run --force: settings bytes identical',
+        fs.readFileSync(localFile(scR), 'utf8') === firstBytes);
+      check('permissions re-run --force: line reports all rules already present',
+        rerun.r.stdout.includes(`Claude Code permissions: all ${localExpected.length} rule(s) already present in ${localFile(scR)}`),
+        JSON.stringify(permLines(rerun.r.stdout)));
     }
   } finally {
     sb.cleanup();
